@@ -19,48 +19,20 @@ const THRESHOLD_ESTABLISHED = 100; // Established wallets (>50 tx): 100 SOL
 const CLUSTER_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const CLUSTER_MIN_WALLETS = 3;
 
-// Cache for wallet transaction counts
+// Caches
 const walletCache = new Map();
 const CACHE_DURATION = 3600000; // 1 hour
 
-// Deduplication cache
 const recentAlerts = new Map();
-const DEDUP_DURATION = 60000;
+const DEDUP_DURATION = 300000; // 5 minutes
 
-// Cluster tracking
 const recentBuys = new Map();
 
-// Token age cache
 const tokenAgeCache = new Map();
 const TOKEN_AGE_CACHE_DURATION = 3600000;
 
-// Token info cache
 const tokenInfoCache = new Map();
 const TOKEN_INFO_CACHE_DURATION = 3600000;
-
-// Rate limiting - 5 requests per second max
-var lastApiCall = 0;
-const MIN_API_INTERVAL = 250; // 250ms between calls
-
-async function rateLimitedGet(url) {
-  var now = Date.now();
-  var wait = MIN_API_INTERVAL - (now - lastApiCall);
-  if (wait > 0) {
-    await new Promise(function(r) { setTimeout(r, wait); });
-  }
-  lastApiCall = Date.now();
-  return axios.get(url);
-}
-
-async function rateLimitedPost(url, data) {
-  var now = Date.now();
-  var wait = MIN_API_INTERVAL - (now - lastApiCall);
-  if (wait > 0) {
-    await new Promise(function(r) { setTimeout(r, wait); });
-  }
-  lastApiCall = Date.now();
-  return axios.post(url, data);
-}
 
 // Known CEX hot wallets
 const CEX_WALLETS = {
@@ -77,7 +49,7 @@ const CEX_WALLETS = {
   'FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5': 'Kraken',
 };
 
-// DEX Program IDs
+// DEX Program IDs - Extended
 const DEX_PROGRAMS = {
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter',
   'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
@@ -126,17 +98,33 @@ function identifyDex(programIds) {
   return 'Unknown DEX';
 }
 
-function isDuplicate(signature) {
+// Clean old entries from dedup cache
+function cleanDedupCache() {
   var now = Date.now();
+  var keysToDelete = [];
   for (var entry of recentAlerts.entries()) {
     if (now - entry[1] > DEDUP_DURATION) {
-      recentAlerts.delete(entry[0]);
+      keysToDelete.push(entry[0]);
     }
   }
+  for (var i = 0; i < keysToDelete.length; i++) {
+    recentAlerts.delete(keysToDelete[i]);
+  }
+}
+
+function isDuplicate(signature) {
+  // Don't dedupe empty signatures
+  if (!signature || signature.length < 10) {
+    return false;
+  }
+  
+  cleanDedupCache();
+  
   if (recentAlerts.has(signature)) {
     return true;
   }
-  recentAlerts.set(signature, now);
+  
+  recentAlerts.set(signature, Date.now());
   return false;
 }
 
@@ -210,7 +198,7 @@ async function getWalletTxCount(walletAddress) {
   }
   try {
     var url = 'https://api.helius.xyz/v0/addresses/' + walletAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=100';
-    var response = await rateLimitedGet(url);
+    var response = await axios.get(url);
     var txCount = response.data.length;
     walletCache.set(walletAddress, { count: txCount, timestamp: Date.now() });
     return txCount;
@@ -223,7 +211,7 @@ async function getWalletTxCount(walletAddress) {
 async function getFundingSource(walletAddress) {
   try {
     var url = 'https://api.helius.xyz/v0/addresses/' + walletAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=50&type=TRANSFER';
-    var response = await rateLimitedGet(url);
+    var response = await axios.get(url);
     var transactions = response.data;
     for (var i = transactions.length - 1; i >= 0; i--) {
       var tx = transactions[i];
@@ -253,7 +241,7 @@ async function getTokenInfo(tokenAddress) {
   
   try {
     var url = 'https://api.helius.xyz/v0/token-metadata?api-key=' + HELIUS_API_KEY;
-    var response = await rateLimitedPost(url, { mintAccounts: [tokenAddress] });
+    var response = await axios.post(url, { mintAccounts: [tokenAddress] });
     if (response.data && response.data.length > 0) {
       var token = response.data[0];
       var symbol = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.symbol) ||
@@ -283,7 +271,7 @@ async function getTokenAge(tokenAddress) {
   
   try {
     var url = 'https://api.helius.xyz/v0/addresses/' + tokenAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=1';
-    var response = await rateLimitedGet(url);
+    var response = await axios.get(url);
     
     if (response.data && response.data.length > 0) {
       var tx = response.data[0];
@@ -505,72 +493,6 @@ function processSwapTransaction(tx) {
 var alertedClusters = new Map();
 var CLUSTER_ALERT_COOLDOWN = 30 * 60 * 1000;
 
-// Queue for processing swaps
-var swapQueue = [];
-var processing = false;
-
-async function processNextSwap() {
-  if (processing || swapQueue.length === 0) return;
-  
-  processing = true;
-  var swapInfo = swapQueue.shift();
-  
-  try {
-    var txCount = await getWalletTxCount(swapInfo.wallet);
-    swapInfo.txCount = txCount;
-
-    var freshnessInfo = getFreshnessIndicator(txCount >= 0 ? txCount : 100);
-    var threshold = freshnessInfo.threshold;
-
-    if (swapInfo.solAmount >= threshold) {
-      console.log('Processing: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
-
-      if (swapInfo.tokenAddress) {
-        var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
-        swapInfo.tokenSymbol = tokenInfo.symbol;
-        swapInfo.tokenName = tokenInfo.name;
-        swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
-      } else {
-        swapInfo.tokenName = 'Unknown';
-      }
-
-      if (txCount >= 0 && txCount < 50) {
-        var funding = await getFundingSource(swapInfo.wallet);
-        swapInfo.fundingSource = funding.wallet;
-        swapInfo.fundingCex = funding.cex;
-      } else {
-        swapInfo.fundingSource = null;
-        swapInfo.fundingCex = null;
-      }
-
-      await sendTelegramAlert(swapInfo);
-
-      if (txCount >= 0 && txCount < 50 && swapInfo.tokenAddress) {
-        trackBuy(swapInfo.tokenAddress, swapInfo);
-        
-        var cluster = checkForCluster(swapInfo.tokenAddress);
-        
-        if (cluster.isCluster) {
-          var lastAlert = alertedClusters.get(swapInfo.tokenAddress);
-          if (!lastAlert || Date.now() - lastAlert > CLUSTER_ALERT_COOLDOWN) {
-            await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge, cluster);
-            alertedClusters.set(swapInfo.tokenAddress, Date.now());
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error processing swap:', error.message);
-  }
-  
-  processing = false;
-  
-  // Process next in queue
-  if (swapQueue.length > 0) {
-    setTimeout(processNextSwap, 100);
-  }
-}
-
 app.post('/webhook', async function(req, res) {
   try {
     var data = req.body;
@@ -581,35 +503,101 @@ app.post('/webhook', async function(req, res) {
       data = [data];
     }
 
+    console.log('Received ' + data.length + ' transactions');
+
+    // Respond quickly to webhook
+    res.status(200).json({ status: 'ok' });
+
+    // Process in background
     for (var i = 0; i < data.length; i++) {
       var tx = data[i];
       
-      if (tx.type !== 'SWAP') continue;
-      if (isDuplicate(tx.signature)) continue;
+      try {
+        if (tx.type !== 'SWAP') {
+          continue;
+        }
+        
+        var sig = tx.signature || 'no-sig-' + Date.now() + '-' + i;
+        
+        if (isDuplicate(sig)) {
+          console.log('Skipping duplicate: ' + sig.slice(0, 20) + '...');
+          continue;
+        }
 
-      var swapInfo = processSwapTransaction(tx);
-      if (!swapInfo) continue;
+        var swapInfo = processSwapTransaction(tx);
+        if (!swapInfo) continue;
 
-      // Pre-filter: skip tiny swaps
-      if (swapInfo.solAmount < THRESHOLD_FRESH) continue;
+        // Pre-filter tiny swaps
+        if (swapInfo.solAmount < THRESHOLD_FRESH) {
+          console.log('Below threshold: ' + swapInfo.solAmount.toFixed(2) + ' SOL');
+          continue;
+        }
 
-      swapQueue.push(swapInfo);
+        console.log('Checking wallet for ' + swapInfo.solAmount.toFixed(2) + ' SOL swap...');
+
+        // Get wallet tx count
+        var txCount = await getWalletTxCount(swapInfo.wallet);
+        swapInfo.txCount = txCount;
+
+        // Check dynamic threshold
+        var freshnessInfo = getFreshnessIndicator(txCount >= 0 ? txCount : 100);
+        if (swapInfo.solAmount < freshnessInfo.threshold) {
+          console.log('Below dynamic threshold: ' + swapInfo.solAmount.toFixed(2) + ' < ' + freshnessInfo.threshold + ' SOL');
+          continue;
+        }
+
+        console.log('Processing: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
+
+        // Get token info
+        if (swapInfo.tokenAddress) {
+          var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
+          swapInfo.tokenSymbol = tokenInfo.symbol;
+          swapInfo.tokenName = tokenInfo.name;
+          swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
+        } else {
+          swapInfo.tokenName = 'Unknown';
+        }
+
+        // Get funding source for fresh wallets
+        if (txCount >= 0 && txCount < 50) {
+          var funding = await getFundingSource(swapInfo.wallet);
+          swapInfo.fundingSource = funding.wallet;
+          swapInfo.fundingCex = funding.cex;
+        } else {
+          swapInfo.fundingSource = null;
+          swapInfo.fundingCex = null;
+        }
+
+        // Send alert
+        await sendTelegramAlert(swapInfo);
+
+        // Cluster tracking
+        if (txCount >= 0 && txCount < 50 && swapInfo.tokenAddress) {
+          trackBuy(swapInfo.tokenAddress, swapInfo);
+          
+          var cluster = checkForCluster(swapInfo.tokenAddress);
+          
+          if (cluster.isCluster) {
+            var lastAlert = alertedClusters.get(swapInfo.tokenAddress);
+            if (!lastAlert || Date.now() - lastAlert > CLUSTER_ALERT_COOLDOWN) {
+              await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge, cluster);
+              alertedClusters.set(swapInfo.tokenAddress, Date.now());
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error processing swap:', error.message);
+      }
     }
-
-    // Start processing
-    processNextSwap();
-
-    res.status(200).json({ status: 'ok', queued: swapQueue.length });
   } catch (error) {
     console.error('Webhook error:', error.message);
-    res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/health', function(req, res) {
   res.json({ 
     status: 'healthy', 
-    queue: swapQueue.length,
+    dedupCacheSize: recentAlerts.size,
     thresholds: {
       fresh: THRESHOLD_FRESH,
       newish: THRESHOLD_NEWISH,
@@ -622,7 +610,7 @@ app.get('/', function(req, res) {
   res.json({
     name: 'Solana Whale Alert Bot v2',
     status: 'running',
-    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'rate_limiting'],
+    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex'],
     thresholds: {
       fresh_wallets: THRESHOLD_FRESH + ' SOL',
       newish_wallets: THRESHOLD_NEWISH + ' SOL',
