@@ -24,10 +24,10 @@ const CLUSTER_MIN_WALLETS = 3;
 
 // Caches
 const walletCache = new Map();
-const CACHE_DURATION = 3600000; // 1 hour
+const CACHE_DURATION = 3600000;
 
 const recentAlerts = new Map();
-const DEDUP_DURATION = 300000; // 5 minutes
+const DEDUP_DURATION = 300000;
 
 const recentBuys = new Map();
 
@@ -52,7 +52,7 @@ const CEX_WALLETS = {
   'FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5': 'Kraken',
 };
 
-// DEX Program IDs - Extended
+// DEX Program IDs
 const DEX_PROGRAMS = {
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter',
   'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
@@ -341,7 +341,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
       disable_web_page_preview: true
     });
 
-    console.log('CLUSTER ALERT sent for ' + tokenSymbol + ' - ' + cluster.buys.length + ' wallets, ' + cluster.totalSol.toFixed(1) + ' SOL');
+    console.log('CLUSTER ALERT sent for ' + tokenSymbol);
   } catch (error) {
     console.error('Error sending cluster alert:', error.message);
   }
@@ -428,7 +428,7 @@ function processSwapTransaction(tx) {
     var tokenTransfers = tx.tokenTransfers || [];
     var instructions = tx.instructions || [];
 
-    // Method 1: Check native SOL transfers from feePayer
+    // Calculate SOL spent from native transfers (lamports -> SOL)
     var solSpent = 0;
     for (var i = 0; i < nativeTransfers.length; i++) {
       var transfer = nativeTransfers[i];
@@ -437,30 +437,23 @@ function processSwapTransaction(tx) {
       }
     }
 
-    // Method 2: Check for WSOL transfers (SOL is wrapped before swap)
-    var wsolSpent = 0;
+    // Also check WSOL transfers from feePayer
     for (var w = 0; w < tokenTransfers.length; w++) {
       var tt = tokenTransfers[w];
       if (tt.mint === WSOL_MINT && tt.fromUserAccount === feePayer) {
-        wsolSpent += (tt.tokenAmount || 0);
+        // tokenAmount in Helius is already decimal-adjusted
+        solSpent += (tt.tokenAmount || 0);
       }
     }
 
-    // Use whichever is larger (they shouldn't both have values)
-    var totalSolSpent = Math.max(solSpent, wsolSpent);
-
-    // Method 3: If still 0, try to find any significant SOL movement
-    if (totalSolSpent === 0) {
-      for (var n = 0; n < nativeTransfers.length; n++) {
-        var nt = nativeTransfers[n];
-        var amount = (nt.amount || 0) / 1e9;
-        if (amount > totalSolSpent) {
-          totalSolSpent = amount;
-        }
-      }
+    // Sanity check: SOL amount should be reasonable (max ~1000 SOL for whale alert)
+    // If it's crazy high, something went wrong - cap it or skip
+    if (solSpent > 10000) {
+      console.log('Warning: Unrealistic SOL amount ' + solSpent + ', skipping');
+      return null;
     }
 
-    // Find the token being bought (not WSOL)
+    // Find the token being bought (not WSOL, not SOL)
     var tokenSymbol = 'Unknown';
     var tokenAddress = '';
     for (var j = 0; j < tokenTransfers.length; j++) {
@@ -473,7 +466,7 @@ function processSwapTransaction(tx) {
       }
     }
 
-    // If no token found going TO feePayer, check any non-WSOL token transfer
+    // If no token found going TO feePayer, check any non-WSOL token in transfer
     if (!tokenAddress) {
       for (var k = 0; k < tokenTransfers.length; k++) {
         var tk = tokenTransfers[k];
@@ -519,7 +512,7 @@ function processSwapTransaction(tx) {
       wallet: feePayer,
       tokenSymbol: tokenSymbol,
       tokenAddress: tokenAddress,
-      solAmount: totalSolSpent,
+      solAmount: solSpent,
       dex: dex,
       signature: signature
     };
@@ -544,10 +537,8 @@ app.post('/webhook', async function(req, res) {
 
     console.log('Received ' + data.length + ' transactions');
 
-    // Respond quickly to webhook
     res.status(200).json({ status: 'ok' });
 
-    // Process in background
     for (var i = 0; i < data.length; i++) {
       var tx = data[i];
       
@@ -559,38 +550,29 @@ app.post('/webhook', async function(req, res) {
         var sig = tx.signature || 'no-sig-' + Date.now() + '-' + i;
         
         if (isDuplicate(sig)) {
-          console.log('Skipping duplicate: ' + sig.slice(0, 20) + '...');
           continue;
         }
 
         var swapInfo = processSwapTransaction(tx);
         if (!swapInfo) continue;
 
-        // Log every swap for debugging
-        console.log('Swap detected: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
+        console.log('Swap: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
-        // Pre-filter tiny swaps
         if (swapInfo.solAmount < THRESHOLD_FRESH) {
-          console.log('Below threshold: ' + swapInfo.solAmount.toFixed(2) + ' SOL < ' + THRESHOLD_FRESH);
           continue;
         }
 
-        console.log('Checking wallet for ' + swapInfo.solAmount.toFixed(2) + ' SOL swap...');
-
-        // Get wallet tx count
         var txCount = await getWalletTxCount(swapInfo.wallet);
         swapInfo.txCount = txCount;
 
-        // Check dynamic threshold
         var freshnessInfo = getFreshnessIndicator(txCount >= 0 ? txCount : 100);
         if (swapInfo.solAmount < freshnessInfo.threshold) {
-          console.log('Below dynamic threshold: ' + swapInfo.solAmount.toFixed(2) + ' < ' + freshnessInfo.threshold + ' SOL');
+          console.log('Below dynamic threshold: ' + swapInfo.solAmount.toFixed(2) + ' < ' + freshnessInfo.threshold);
           continue;
         }
 
-        console.log('Processing: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
+        console.log('ALERT: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
-        // Get token info
         if (swapInfo.tokenAddress) {
           var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
           swapInfo.tokenSymbol = tokenInfo.symbol;
@@ -600,7 +582,6 @@ app.post('/webhook', async function(req, res) {
           swapInfo.tokenName = 'Unknown';
         }
 
-        // Get funding source for fresh wallets
         if (txCount >= 0 && txCount < 50) {
           var funding = await getFundingSource(swapInfo.wallet);
           swapInfo.fundingSource = funding.wallet;
@@ -610,10 +591,8 @@ app.post('/webhook', async function(req, res) {
           swapInfo.fundingCex = null;
         }
 
-        // Send alert
         await sendTelegramAlert(swapInfo);
 
-        // Cluster tracking
         if (txCount >= 0 && txCount < 50 && swapInfo.tokenAddress) {
           trackBuy(swapInfo.tokenAddress, swapInfo);
           
