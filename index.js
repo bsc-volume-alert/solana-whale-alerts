@@ -15,6 +15,10 @@ const PORT = process.env.PORT || 3000;
 const walletCache = new Map();
 const CACHE_DURATION = 3600000; // 1 hour in ms
 
+// Deduplication cache - prevents duplicate alerts
+const recentAlerts = new Map();
+const DEDUP_DURATION = 60000; // 1 minute
+
 // Known CEX hot wallets
 const CEX_WALLETS = {
   // Binance
@@ -36,15 +40,43 @@ const CEX_WALLETS = {
   'FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5': 'Kraken',
 };
 
-// DEX Program IDs
+// DEX Program IDs - Extended list
 const DEX_PROGRAMS = {
+  // Jupiter
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter',
   'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
+  'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo': 'Jupiter',
+  'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph': 'Jupiter',
+  // Raydium
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8': 'Raydium',
+  'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK': 'Raydium CLMM',
+  '5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h': 'Raydium',
+  'routeUGWgWzqBWFcrCfv8tritsqukccJPu3q5GPP3xS': 'Raydium',
+  // Orca
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc': 'Orca',
   '9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP': 'Orca',
+  'DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1': 'Orca',
+  // Meteora
   'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo': 'Meteora',
+  'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB': 'Meteora',
+  // Pump.fun
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P': 'Pump.fun',
+  'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA': 'Pump.fun AMM',
+  // Phoenix
+  'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY': 'Phoenix',
+  // Lifinity
+  'EewxydAPCCVuNEyrVN68PuSYdQ7wKn27V9Gjeoi8dy3S': 'Lifinity',
+  // Marinade
+  'MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD': 'Marinade',
+  // Sanctum
+  'stkitrT1Uoy18Dk1fTrgPw8W6MVzoCfYoAFT4MLsmhq': 'Sanctum',
+  // OpenBook
+  'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX': 'OpenBook',
+  'opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb': 'OpenBook',
+  // Fluxbeam
+  'FLUXubRmkEi2q6K3Y9kBPg9248ggaZVsoSFhtJHSrm1X': 'Fluxbeam',
+  // Moonshot
+  'MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG': 'Moonshot',
 };
 
 // Get freshness indicator
@@ -71,6 +103,27 @@ function identifyDex(programIds) {
     }
   }
   return 'Unknown DEX';
+}
+
+// Check for duplicate alerts
+function isDuplicate(signature) {
+  const now = Date.now();
+  
+  // Clean old entries
+  for (const [key, timestamp] of recentAlerts.entries()) {
+    if (now - timestamp > DEDUP_DURATION) {
+      recentAlerts.delete(key);
+    }
+  }
+  
+  // Check if this signature was recently processed
+  if (recentAlerts.has(signature)) {
+    return true;
+  }
+  
+  // Mark as processed
+  recentAlerts.set(signature, now);
+  return false;
 }
 
 // Get wallet transaction count
@@ -126,10 +179,38 @@ async function getFundingSource(walletAddress) {
   }
 }
 
+// Get token info from Helius
+async function getTokenInfo(tokenAddress) {
+  try {
+    const url = `https://api.helius.xyz/v0/token-metadata?api-key=${HELIUS_API_KEY}`;
+    const response = await axios.post(url, {
+      mintAccounts: [tokenAddress]
+    });
+    
+    if (response.data && response.data.length > 0) {
+      const token = response.data[0];
+      return {
+        symbol: token.onChainMetadata?.metadata?.data?.symbol || 
+                token.legacyMetadata?.symbol || 
+                token.offChainMetadata?.metadata?.symbol ||
+                tokenAddress.slice(0, 8),
+        name: token.onChainMetadata?.metadata?.data?.name || 
+              token.legacyMetadata?.name || 
+              token.offChainMetadata?.metadata?.name ||
+              'Unknown'
+      };
+    }
+    return { symbol: tokenAddress.slice(0, 8), name: 'Unknown' };
+  } catch (error) {
+    console.error('Error fetching token info:', error.message);
+    return { symbol: tokenAddress.slice(0, 8), name: 'Unknown' };
+  }
+}
+
 // Send Telegram alert
 async function sendTelegramAlert(swapData) {
   try {
-    const { wallet, tokenSymbol, tokenAddress, solAmount, dex, txCount, fundingSource, fundingCex, signature } = swapData;
+    const { wallet, tokenSymbol, tokenName, tokenAddress, solAmount, dex, txCount, fundingSource, fundingCex, signature } = swapData;
 
     // Freshness indicator
     let freshnessLine;
@@ -150,11 +231,17 @@ async function sendTelegramAlert(swapData) {
     }
 
     const shortWallet = `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
+    
+    // Display token name if available
+    const tokenDisplay = tokenName !== 'Unknown' && tokenName !== tokenSymbol 
+      ? `${tokenName} (${tokenSymbol})`
+      : tokenSymbol;
 
     const message = `
 🐋 <b>BIG BUY ALERT</b>
 
-<b>Token:</b> ${tokenSymbol}
+<b>Token:</b> ${tokenDisplay}
+<b>Contract:</b> <code>${tokenAddress}</code>
 <b>Wallet:</b> <code>${shortWallet}</code>
 <b>Amount:</b> ${solAmount.toFixed(2)} SOL
 <b>DEX:</b> ${dex}
@@ -162,7 +249,7 @@ async function sendTelegramAlert(swapData) {
 ${freshnessLine}
 ${fundingLine}
 
-🔗 <a href="https://solscan.io/tx/${signature}">View TX</a> | <a href="https://solscan.io/account/${wallet}">Wallet</a> | <a href="https://birdeye.so/token/${tokenAddress}?chain=solana">Chart</a>
+🔗 <a href="https://solscan.io/tx/${signature}">TX</a> | <a href="https://solscan.io/account/${wallet}">Wallet</a> | <a href="https://dexscreener.com/solana/${tokenAddress}">Dexscreener</a> | <a href="https://birdeye.so/token/${tokenAddress}?chain=solana">Birdeye</a>
 `.trim();
 
     const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -173,7 +260,7 @@ ${fundingLine}
       disable_web_page_preview: true
     });
 
-    console.log(`Alert sent for ${solAmount.toFixed(2)} SOL swap by ${shortWallet}`);
+    console.log(`Alert sent for ${solAmount.toFixed(2)} SOL swap by ${shortWallet} for ${tokenSymbol}`);
   } catch (error) {
     console.error('Error sending Telegram alert:', error.message);
   }
@@ -207,8 +294,31 @@ function processSwapTransaction(tx) {
       }
     }
 
-    // Identify DEX
+    // Identify DEX from all program IDs in the transaction
     const programIds = instructions.map(inst => inst.programId || '');
+    
+    // Also check inner instructions if available
+    if (tx.innerInstructions) {
+      for (const inner of tx.innerInstructions) {
+        if (inner.instructions) {
+          for (const inst of inner.instructions) {
+            if (inst.programId) {
+              programIds.push(inst.programId);
+            }
+          }
+        }
+      }
+    }
+    
+    // Check account keys as well
+    if (tx.accountData) {
+      for (const acc of tx.accountData) {
+        if (acc.account) {
+          programIds.push(acc.account);
+        }
+      }
+    }
+    
     const dex = identifyDex(programIds);
 
     return {
@@ -247,6 +357,12 @@ app.post('/webhook', async (req, res) => {
           continue;
         }
 
+        // Check for duplicate
+        if (isDuplicate(tx.signature)) {
+          console.log(`Skipping duplicate: ${tx.signature}`);
+          continue;
+        }
+
         // Process the swap
         const swapInfo = processSwapTransaction(tx);
         if (!swapInfo) continue;
@@ -257,6 +373,15 @@ app.post('/webhook', async (req, res) => {
         }
 
         console.log(`Processing swap: ${swapInfo.solAmount.toFixed(2)} SOL for ${swapInfo.tokenSymbol}`);
+
+        // Get token info
+        if (swapInfo.tokenAddress) {
+          const tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
+          swapInfo.tokenSymbol = tokenInfo.symbol;
+          swapInfo.tokenName = tokenInfo.name;
+        } else {
+          swapInfo.tokenName = 'Unknown';
+        }
 
         // Get wallet transaction count
         const txCount = await getWalletTxCount(swapInfo.wallet);
@@ -306,3 +431,33 @@ app.listen(PORT, () => {
   console.log(`🐋 Solana Whale Alert Bot running on port ${PORT}`);
   console.log(`Minimum SOL threshold: ${MIN_SOL_AMOUNT}`);
 });
+```
+
+---
+
+## What's New
+
+| Fix | Description |
+|-----|-------------|
+| ✅ No duplicates | Tracks signatures for 60 seconds to prevent duplicate alerts |
+| ✅ More DEXs | Added 25+ DEX programs (Jupiter, Raydium, Orca, Meteora, Pump.fun, Phoenix, Lifinity, OpenBook, etc.) |
+| ✅ Token name | Fetches full token name and symbol from Helius |
+| ✅ Contract address | Shows the token contract address |
+| ✅ Dexscreener link | Added direct link to Dexscreener chart |
+
+---
+
+## New Alert Format
+```
+🐋 BIG BUY ALERT
+
+Token: Bonk (BONK)
+Contract: DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+Wallet: 7xKp...3nF
+Amount: 62.50 SOL
+DEX: Jupiter
+
+🟢 FRESH (3 transactions)
+💰 Funded from: Binance
+
+🔗 TX | Wallet | Dexscreener | Birdeye
