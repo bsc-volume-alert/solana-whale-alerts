@@ -11,28 +11,56 @@ const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const PORT = process.env.PORT || 3000;
 
 // Dynamic thresholds based on wallet freshness
-const THRESHOLD_FRESH = 20;      // Fresh wallets (<10 tx): 20 SOL
-const THRESHOLD_NEWISH = 35;     // New-ish wallets (10-50 tx): 35 SOL
+const THRESHOLD_FRESH = 20;       // Fresh wallets (<10 tx): 20 SOL
+const THRESHOLD_NEWISH = 35;      // New-ish wallets (10-50 tx): 35 SOL
 const THRESHOLD_ESTABLISHED = 100; // Established wallets (>50 tx): 100 SOL
 
 // Cluster detection settings
 const CLUSTER_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const CLUSTER_MIN_WALLETS = 3; // Minimum wallets to trigger cluster alert
+const CLUSTER_MIN_WALLETS = 3;
 
 // Cache for wallet transaction counts
 const walletCache = new Map();
-const CACHE_DURATION = 3600000;
+const CACHE_DURATION = 3600000; // 1 hour
 
 // Deduplication cache
 const recentAlerts = new Map();
 const DEDUP_DURATION = 60000;
 
-// Cluster tracking - tracks recent buys per token
+// Cluster tracking
 const recentBuys = new Map();
 
 // Token age cache
 const tokenAgeCache = new Map();
 const TOKEN_AGE_CACHE_DURATION = 3600000;
+
+// Token info cache
+const tokenInfoCache = new Map();
+const TOKEN_INFO_CACHE_DURATION = 3600000;
+
+// Rate limiting - 5 requests per second max
+var lastApiCall = 0;
+const MIN_API_INTERVAL = 250; // 250ms between calls
+
+async function rateLimitedGet(url) {
+  var now = Date.now();
+  var wait = MIN_API_INTERVAL - (now - lastApiCall);
+  if (wait > 0) {
+    await new Promise(function(r) { setTimeout(r, wait); });
+  }
+  lastApiCall = Date.now();
+  return axios.get(url);
+}
+
+async function rateLimitedPost(url, data) {
+  var now = Date.now();
+  var wait = MIN_API_INTERVAL - (now - lastApiCall);
+  if (wait > 0) {
+    await new Promise(function(r) { setTimeout(r, wait); });
+  }
+  lastApiCall = Date.now();
+  return axios.post(url, data);
+}
 
 // Known CEX hot wallets
 const CEX_WALLETS = {
@@ -49,39 +77,29 @@ const CEX_WALLETS = {
   'FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5': 'Kraken',
 };
 
-// DEX Program IDs - Extended list with Pump.fun, Meteora, Phoenix
+// DEX Program IDs
 const DEX_PROGRAMS = {
-  // Jupiter
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter',
   'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
   'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo': 'Jupiter',
   'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph': 'Jupiter',
-  // Raydium
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8': 'Raydium',
   'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK': 'Raydium CLMM',
   '5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h': 'Raydium',
   'routeUGWgWzqBWFcrCfv8tritsqukccJPu3q5GPP3xS': 'Raydium',
-  // Orca
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc': 'Orca',
   '9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP': 'Orca',
   'DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1': 'Orca',
-  // Meteora
   'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo': 'Meteora',
   'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB': 'Meteora',
   '24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi': 'Meteora',
-  // Pump.fun
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P': 'Pump.fun',
   'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA': 'Pump.fun AMM',
-  // Phoenix
   'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY': 'Phoenix',
-  // Lifinity
   'EewxydAPCCVuNEyrVN68PuSYdQ7wKn27V9Gjeoi8dy3S': 'Lifinity',
-  // OpenBook
   'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX': 'OpenBook',
   'opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb': 'OpenBook',
-  // Fluxbeam
   'FLUXubRmkEi2q6K3Y9kBPg9248ggaZVsoSFhtJHSrm1X': 'Fluxbeam',
-  // Moonshot
   'MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG': 'Moonshot',
 };
 
@@ -122,7 +140,6 @@ function isDuplicate(signature) {
   return false;
 }
 
-// Clean old entries from cluster tracking
 function cleanRecentBuys() {
   var now = Date.now();
   for (var entry of recentBuys.entries()) {
@@ -139,7 +156,6 @@ function cleanRecentBuys() {
   }
 }
 
-// Track buy for cluster detection
 function trackBuy(tokenAddress, swapData) {
   cleanRecentBuys();
   
@@ -160,16 +176,13 @@ function trackBuy(tokenAddress, swapData) {
   return buys;
 }
 
-// Check for cluster of fresh wallets
-function checkForCluster(tokenAddress, tokenSymbol, tokenName, tokenAge) {
+function checkForCluster(tokenAddress) {
   var buys = recentBuys.get(tokenAddress) || [];
   
-  // Filter to only fresh wallets (<50 tx)
   var freshBuys = buys.filter(function(buy) {
     return buy.txCount >= 0 && buy.txCount < 50;
   });
   
-  // Get unique wallets
   var uniqueWallets = [];
   var seenWallets = {};
   for (var i = 0; i < freshBuys.length; i++) {
@@ -197,7 +210,7 @@ async function getWalletTxCount(walletAddress) {
   }
   try {
     var url = 'https://api.helius.xyz/v0/addresses/' + walletAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=100';
-    var response = await axios.get(url);
+    var response = await rateLimitedGet(url);
     var txCount = response.data.length;
     walletCache.set(walletAddress, { count: txCount, timestamp: Date.now() });
     return txCount;
@@ -209,8 +222,8 @@ async function getWalletTxCount(walletAddress) {
 
 async function getFundingSource(walletAddress) {
   try {
-    var url = 'https://api.helius.xyz/v0/addresses/' + walletAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=100&type=TRANSFER';
-    var response = await axios.get(url);
+    var url = 'https://api.helius.xyz/v0/addresses/' + walletAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=50&type=TRANSFER';
+    var response = await rateLimitedGet(url);
     var transactions = response.data;
     for (var i = transactions.length - 1; i >= 0; i--) {
       var tx = transactions[i];
@@ -233,9 +246,14 @@ async function getFundingSource(walletAddress) {
 }
 
 async function getTokenInfo(tokenAddress) {
+  var cached = tokenInfoCache.get(tokenAddress);
+  if (cached && Date.now() - cached.timestamp < TOKEN_INFO_CACHE_DURATION) {
+    return cached.info;
+  }
+  
   try {
     var url = 'https://api.helius.xyz/v0/token-metadata?api-key=' + HELIUS_API_KEY;
-    var response = await axios.post(url, { mintAccounts: [tokenAddress] });
+    var response = await rateLimitedPost(url, { mintAccounts: [tokenAddress] });
     if (response.data && response.data.length > 0) {
       var token = response.data[0];
       var symbol = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.symbol) ||
@@ -246,7 +264,9 @@ async function getTokenInfo(tokenAddress) {
                  (token.legacyMetadata && token.legacyMetadata.name) ||
                  (token.offChainMetadata && token.offChainMetadata.metadata && token.offChainMetadata.metadata.name) ||
                  'Unknown';
-      return { symbol: symbol, name: name };
+      var info = { symbol: symbol, name: name };
+      tokenInfoCache.set(tokenAddress, { info: info, timestamp: Date.now() });
+      return info;
     }
     return { symbol: tokenAddress.slice(0, 8), name: 'Unknown' };
   } catch (error) {
@@ -255,37 +275,20 @@ async function getTokenInfo(tokenAddress) {
   }
 }
 
-// Get token age (time since first transaction)
 async function getTokenAge(tokenAddress) {
-  // Check cache
   var cached = tokenAgeCache.get(tokenAddress);
   if (cached && Date.now() - cached.timestamp < TOKEN_AGE_CACHE_DURATION) {
     return cached.age;
   }
   
   try {
-    // Get oldest transactions for this token
-    var url = 'https://api.helius.xyz/v0/addresses/' + tokenAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=1&type=CREATE';
-    var response = await axios.get(url);
+    var url = 'https://api.helius.xyz/v0/addresses/' + tokenAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=1';
+    var response = await rateLimitedGet(url);
     
     if (response.data && response.data.length > 0) {
-      var oldestTx = response.data[0];
-      var createdAt = oldestTx.timestamp * 1000; // Convert to ms
-      var ageMs = Date.now() - createdAt;
-      
-      tokenAgeCache.set(tokenAddress, { age: ageMs, timestamp: Date.now() });
-      return ageMs;
-    }
-    
-    // Fallback: get any transaction
-    url = 'https://api.helius.xyz/v0/addresses/' + tokenAddress + '/transactions?api-key=' + HELIUS_API_KEY + '&limit=100';
-    response = await axios.get(url);
-    
-    if (response.data && response.data.length > 0) {
-      // Get oldest from returned transactions
-      var oldest = response.data[response.data.length - 1];
-      var createdAt = oldest.timestamp * 1000;
-      var ageMs = Date.now() - createdAt;
+      var tx = response.data[0];
+      var txTime = tx.timestamp * 1000;
+      var ageMs = Date.now() - txTime;
       
       tokenAgeCache.set(tokenAddress, { age: ageMs, timestamp: Date.now() });
       return ageMs;
@@ -298,7 +301,6 @@ async function getTokenAge(tokenAddress) {
   }
 }
 
-// Format age as human readable string
 function formatAge(ageMs) {
   if (!ageMs) return 'Unknown age';
   
@@ -320,11 +322,10 @@ function formatAge(ageMs) {
   }
 }
 
-// Send cluster alert
 async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, cluster) {
   try {
     var ageStr = formatAge(tokenAge);
-    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000; // Less than 24 hours
+    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000;
     
     var message = '\u{1F6A8} <b>CLUSTER ALERT - COORDINATED BUYING</b> \u{1F6A8}\n\n';
     message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
@@ -351,7 +352,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
       disable_web_page_preview: true
     });
 
-    console.log('CLUSTER ALERT sent for ' + tokenSymbol + ' - ' + cluster.buys.length + ' fresh wallets, ' + cluster.totalSol.toFixed(1) + ' SOL total');
+    console.log('CLUSTER ALERT sent for ' + tokenSymbol + ' - ' + cluster.buys.length + ' wallets, ' + cluster.totalSol.toFixed(1) + ' SOL');
   } catch (error) {
     console.error('Error sending cluster alert:', error.message);
   }
@@ -396,9 +397,8 @@ async function sendTelegramAlert(swapData) {
       tokenDisplay = tokenSymbol;
     }
 
-    // Token age line
     var ageStr = formatAge(tokenAge);
-    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000; // Less than 24 hours
+    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000;
     var ageLine = '\u{23F0} Token: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr;
 
     var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n\n';
@@ -502,9 +502,74 @@ function processSwapTransaction(tx) {
   }
 }
 
-// Track which clusters we've already alerted on
 var alertedClusters = new Map();
-var CLUSTER_ALERT_COOLDOWN = 30 * 60 * 1000; // 30 minutes
+var CLUSTER_ALERT_COOLDOWN = 30 * 60 * 1000;
+
+// Queue for processing swaps
+var swapQueue = [];
+var processing = false;
+
+async function processNextSwap() {
+  if (processing || swapQueue.length === 0) return;
+  
+  processing = true;
+  var swapInfo = swapQueue.shift();
+  
+  try {
+    var txCount = await getWalletTxCount(swapInfo.wallet);
+    swapInfo.txCount = txCount;
+
+    var freshnessInfo = getFreshnessIndicator(txCount >= 0 ? txCount : 100);
+    var threshold = freshnessInfo.threshold;
+
+    if (swapInfo.solAmount >= threshold) {
+      console.log('Processing: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
+
+      if (swapInfo.tokenAddress) {
+        var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
+        swapInfo.tokenSymbol = tokenInfo.symbol;
+        swapInfo.tokenName = tokenInfo.name;
+        swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
+      } else {
+        swapInfo.tokenName = 'Unknown';
+      }
+
+      if (txCount >= 0 && txCount < 50) {
+        var funding = await getFundingSource(swapInfo.wallet);
+        swapInfo.fundingSource = funding.wallet;
+        swapInfo.fundingCex = funding.cex;
+      } else {
+        swapInfo.fundingSource = null;
+        swapInfo.fundingCex = null;
+      }
+
+      await sendTelegramAlert(swapInfo);
+
+      if (txCount >= 0 && txCount < 50 && swapInfo.tokenAddress) {
+        trackBuy(swapInfo.tokenAddress, swapInfo);
+        
+        var cluster = checkForCluster(swapInfo.tokenAddress);
+        
+        if (cluster.isCluster) {
+          var lastAlert = alertedClusters.get(swapInfo.tokenAddress);
+          if (!lastAlert || Date.now() - lastAlert > CLUSTER_ALERT_COOLDOWN) {
+            await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge, cluster);
+            alertedClusters.set(swapInfo.tokenAddress, Date.now());
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error processing swap:', error.message);
+  }
+  
+  processing = false;
+  
+  // Process next in queue
+  if (swapQueue.length > 0) {
+    setTimeout(processNextSwap, 100);
+  }
+}
 
 app.post('/webhook', async function(req, res) {
   try {
@@ -518,83 +583,23 @@ app.post('/webhook', async function(req, res) {
 
     for (var i = 0; i < data.length; i++) {
       var tx = data[i];
-      try {
-        if (tx.type !== 'SWAP') {
-          continue;
-        }
-        if (isDuplicate(tx.signature)) {
-          console.log('Skipping duplicate: ' + tx.signature);
-          continue;
-        }
+      
+      if (tx.type !== 'SWAP') continue;
+      if (isDuplicate(tx.signature)) continue;
 
-        var swapInfo = processSwapTransaction(tx);
-        if (!swapInfo) continue;
+      var swapInfo = processSwapTransaction(tx);
+      if (!swapInfo) continue;
 
-        // Get wallet transaction count first (needed for dynamic threshold)
-        var txCount = await getWalletTxCount(swapInfo.wallet);
-        swapInfo.txCount = txCount;
+      // Pre-filter: skip tiny swaps
+      if (swapInfo.solAmount < THRESHOLD_FRESH) continue;
 
-        // Determine threshold based on wallet freshness
-        var freshnessInfo = getFreshnessIndicator(txCount >= 0 ? txCount : 100);
-        var threshold = freshnessInfo.threshold;
-
-        // Check if amount meets dynamic threshold
-        if (swapInfo.solAmount < threshold) {
-          continue;
-        }
-
-        console.log('Processing swap: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol + ' (threshold: ' + threshold + ')');
-
-        // Get token info
-        if (swapInfo.tokenAddress) {
-          var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
-          swapInfo.tokenSymbol = tokenInfo.symbol;
-          swapInfo.tokenName = tokenInfo.name;
-        } else {
-          swapInfo.tokenName = 'Unknown';
-        }
-
-        // Get token age
-        if (swapInfo.tokenAddress) {
-          swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
-        }
-
-        // If fresh wallet, get funding source
-        if (txCount >= 0 && txCount < 50) {
-          var funding = await getFundingSource(swapInfo.wallet);
-          swapInfo.fundingSource = funding.wallet;
-          swapInfo.fundingCex = funding.cex;
-        } else {
-          swapInfo.fundingSource = null;
-          swapInfo.fundingCex = null;
-        }
-
-        // Send individual alert
-        await sendTelegramAlert(swapInfo);
-
-        // Track for cluster detection (only fresh/new-ish wallets)
-        if (txCount >= 0 && txCount < 50 && swapInfo.tokenAddress) {
-          var buys = trackBuy(swapInfo.tokenAddress, swapInfo);
-          
-          // Check for cluster
-          var cluster = checkForCluster(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge);
-          
-          if (cluster.isCluster) {
-            // Check cooldown
-            var lastAlert = alertedClusters.get(swapInfo.tokenAddress);
-            if (!lastAlert || Date.now() - lastAlert > CLUSTER_ALERT_COOLDOWN) {
-              await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge, cluster);
-              alertedClusters.set(swapInfo.tokenAddress, Date.now());
-            }
-          }
-        }
-
-      } catch (error) {
-        console.error('Error processing transaction:', error.message);
-      }
+      swapQueue.push(swapInfo);
     }
 
-    res.status(200).json({ status: 'ok' });
+    // Start processing
+    processNextSwap();
+
+    res.status(200).json({ status: 'ok', queued: swapQueue.length });
   } catch (error) {
     console.error('Webhook error:', error.message);
     res.status(500).json({ error: error.message });
@@ -604,6 +609,7 @@ app.post('/webhook', async function(req, res) {
 app.get('/health', function(req, res) {
   res.json({ 
     status: 'healthy', 
+    queue: swapQueue.length,
     thresholds: {
       fresh: THRESHOLD_FRESH,
       newish: THRESHOLD_NEWISH,
@@ -616,7 +622,7 @@ app.get('/', function(req, res) {
   res.json({
     name: 'Solana Whale Alert Bot v2',
     status: 'running',
-    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex'],
+    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'rate_limiting'],
     thresholds: {
       fresh_wallets: THRESHOLD_FRESH + ' SOL',
       newish_wallets: THRESHOLD_NEWISH + ' SOL',
@@ -628,5 +634,4 @@ app.get('/', function(req, res) {
 app.listen(PORT, function() {
   console.log('Solana Whale Alert Bot v2 running on port ' + PORT);
   console.log('Thresholds - Fresh: ' + THRESHOLD_FRESH + ' SOL, New-ish: ' + THRESHOLD_NEWISH + ' SOL, Established: ' + THRESHOLD_ESTABLISHED + ' SOL');
-  console.log('Cluster detection: ' + CLUSTER_MIN_WALLETS + '+ fresh wallets in ' + (CLUSTER_WINDOW_MS / 60000) + ' mins');
 });
