@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: solana-whale-alerts
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: HELIUS_API_KEY
+        sync: false
+      - key: MIN_SOL_AMOUNT
+        value: 50
