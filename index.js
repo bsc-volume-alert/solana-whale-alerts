@@ -275,9 +275,7 @@ async function getTokenInfo(tokenAddress) {
   }
 }
 
-// Get token creation time using RPC getSignaturesForAddress
 async function getTokenAge(tokenAddress) {
-  // Skip known old tokens
   if (KNOWN_OLD_TOKENS.includes(tokenAddress)) {
     return null;
   }
@@ -288,7 +286,6 @@ async function getTokenAge(tokenAddress) {
   }
   
   try {
-    // Use Helius RPC to get signatures for the token mint address
     var url = 'https://mainnet.helius-rpc.com/?api-key=' + HELIUS_API_KEY;
     var response = await axios.post(url, {
       jsonrpc: '2.0',
@@ -300,13 +297,11 @@ async function getTokenAge(tokenAddress) {
     if (response.data.result && response.data.result.length > 0) {
       var signatures = response.data.result;
       
-      // If we got 1000 signatures, token has lots of activity - likely old
       if (signatures.length >= 1000) {
         tokenAgeCache.set(tokenAddress, { age: null, timestamp: Date.now() });
         return null;
       }
       
-      // Get the oldest signature (last in array)
       var oldestSig = signatures[signatures.length - 1];
       var blockTime = oldestSig.blockTime;
       
@@ -352,7 +347,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
     
     var message = '\u{1F6A8} <b>CLUSTER ALERT - COORDINATED BUYING</b> \u{1F6A8}\n\n';
     message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
-    message += '<b>Contract:</b> <code>' + tokenAddress + '</code>\n';
+    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (ageStr) {
       message += '<b>Token Age:</b> ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
@@ -362,7 +357,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
       var buy = cluster.buys[i];
       var shortWallet = buy.wallet.slice(0, 4) + '...' + buy.wallet.slice(-4);
       var fundingStr = buy.fundingCex ? ' (' + buy.fundingCex + ')' : '';
-      message += '\u{2022} ' + shortWallet + ': ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
+      message += '\u{2022} <a href="https://app.cielo.finance/profile/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
     }
     
     message += '\n<b>Total:</b> ' + cluster.totalSol.toFixed(1) + ' SOL\n\n';
@@ -427,13 +422,12 @@ async function sendTelegramAlert(swapData) {
 
     var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n\n';
     message += '<b>Token:</b> ' + tokenDisplay + '\n';
-    message += '<b>Contract:</b> <code>' + tokenAddress + '</code>\n';
-    message += '<b>Wallet:</b> <code>' + shortWallet + '</code>\n';
+    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    message += '<b>Wallet:</b> <a href="https://app.cielo.finance/profile/' + wallet + '">' + shortWallet + '</a>\n';
     message += '<b>Amount:</b> ' + solAmount.toFixed(2) + ' SOL\n';
     message += '<b>DEX:</b> ' + dex + '\n\n';
     message += freshnessLine + '\n';
     
-    // Only show token age if we have it
     if (ageStr) {
       message += '\u{23F0} Token: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
@@ -442,7 +436,6 @@ async function sendTelegramAlert(swapData) {
       message += fundingLine + '\n';
     }
     message += '\n\u{1F517} <a href="https://solscan.io/tx/' + signature + '">TX</a>';
-    message += ' | <a href="https://solscan.io/account/' + wallet + '">Wallet</a>';
     message += ' | <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
     message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
 
@@ -468,7 +461,6 @@ function processSwapTransaction(tx) {
     var tokenTransfers = tx.tokenTransfers || [];
     var instructions = tx.instructions || [];
 
-    // Calculate SOL spent from native transfers
     var solSpent = 0;
     for (var i = 0; i < nativeTransfers.length; i++) {
       var transfer = nativeTransfers[i];
@@ -477,7 +469,6 @@ function processSwapTransaction(tx) {
       }
     }
 
-    // Also check WSOL transfers from feePayer
     for (var w = 0; w < tokenTransfers.length; w++) {
       var tt = tokenTransfers[w];
       if (tt.mint === WSOL_MINT && tt.fromUserAccount === feePayer) {
@@ -485,13 +476,11 @@ function processSwapTransaction(tx) {
       }
     }
 
-    // Sanity check
     if (solSpent > 10000) {
       console.log('Warning: Unrealistic SOL amount ' + solSpent + ', skipping');
       return null;
     }
 
-    // Find the token being bought
     var tokenSymbol = 'Unknown';
     var tokenAddress = '';
     for (var j = 0; j < tokenTransfers.length; j++) {
