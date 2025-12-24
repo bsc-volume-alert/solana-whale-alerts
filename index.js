@@ -10,6 +10,9 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const PORT = process.env.PORT || 3000;
 
+// WSOL mint address
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+
 // Dynamic thresholds based on wallet freshness
 const THRESHOLD_FRESH = 20;       // Fresh wallets (<10 tx): 20 SOL
 const THRESHOLD_NEWISH = 35;      // New-ish wallets (10-50 tx): 35 SOL
@@ -98,7 +101,6 @@ function identifyDex(programIds) {
   return 'Unknown DEX';
 }
 
-// Clean old entries from dedup cache
 function cleanDedupCache() {
   var now = Date.now();
   var keysToDelete = [];
@@ -113,7 +115,6 @@ function cleanDedupCache() {
 }
 
 function isDuplicate(signature) {
-  // Don't dedupe empty signatures
   if (!signature || signature.length < 10) {
     return false;
   }
@@ -427,6 +428,7 @@ function processSwapTransaction(tx) {
     var tokenTransfers = tx.tokenTransfers || [];
     var instructions = tx.instructions || [];
 
+    // Method 1: Check native SOL transfers from feePayer
     var solSpent = 0;
     for (var i = 0; i < nativeTransfers.length; i++) {
       var transfer = nativeTransfers[i];
@@ -435,21 +437,58 @@ function processSwapTransaction(tx) {
       }
     }
 
+    // Method 2: Check for WSOL transfers (SOL is wrapped before swap)
+    var wsolSpent = 0;
+    for (var w = 0; w < tokenTransfers.length; w++) {
+      var tt = tokenTransfers[w];
+      if (tt.mint === WSOL_MINT && tt.fromUserAccount === feePayer) {
+        wsolSpent += (tt.tokenAmount || 0);
+      }
+    }
+
+    // Use whichever is larger (they shouldn't both have values)
+    var totalSolSpent = Math.max(solSpent, wsolSpent);
+
+    // Method 3: If still 0, try to find any significant SOL movement
+    if (totalSolSpent === 0) {
+      for (var n = 0; n < nativeTransfers.length; n++) {
+        var nt = nativeTransfers[n];
+        var amount = (nt.amount || 0) / 1e9;
+        if (amount > totalSolSpent) {
+          totalSolSpent = amount;
+        }
+      }
+    }
+
+    // Find the token being bought (not WSOL)
     var tokenSymbol = 'Unknown';
     var tokenAddress = '';
     for (var j = 0; j < tokenTransfers.length; j++) {
-      var tt = tokenTransfers[j];
-      if (tt.toUserAccount === feePayer) {
-        tokenSymbol = tt.tokenSymbol || (tt.mint ? tt.mint.slice(0, 8) : 'Unknown');
-        tokenAddress = tt.mint || '';
+      var tkn = tokenTransfers[j];
+      // Token received by feePayer that's not WSOL
+      if (tkn.toUserAccount === feePayer && tkn.mint !== WSOL_MINT) {
+        tokenSymbol = tkn.tokenSymbol || (tkn.mint ? tkn.mint.slice(0, 8) : 'Unknown');
+        tokenAddress = tkn.mint || '';
         break;
       }
     }
 
+    // If no token found going TO feePayer, check any non-WSOL token transfer
+    if (!tokenAddress) {
+      for (var k = 0; k < tokenTransfers.length; k++) {
+        var tk = tokenTransfers[k];
+        if (tk.mint && tk.mint !== WSOL_MINT) {
+          tokenSymbol = tk.tokenSymbol || tk.mint.slice(0, 8);
+          tokenAddress = tk.mint;
+          break;
+        }
+      }
+    }
+
     var programIds = [];
-    for (var k = 0; k < instructions.length; k++) {
-      if (instructions[k].programId) {
-        programIds.push(instructions[k].programId);
+    for (var p = 0; p < instructions.length; p++) {
+      if (instructions[p].programId) {
+        programIds.push(instructions[p].programId);
       }
     }
 
@@ -457,9 +496,9 @@ function processSwapTransaction(tx) {
       for (var m = 0; m < tx.innerInstructions.length; m++) {
         var inner = tx.innerInstructions[m];
         if (inner.instructions) {
-          for (var n = 0; n < inner.instructions.length; n++) {
-            if (inner.instructions[n].programId) {
-              programIds.push(inner.instructions[n].programId);
+          for (var q = 0; q < inner.instructions.length; q++) {
+            if (inner.instructions[q].programId) {
+              programIds.push(inner.instructions[q].programId);
             }
           }
         }
@@ -467,9 +506,9 @@ function processSwapTransaction(tx) {
     }
 
     if (tx.accountData) {
-      for (var p = 0; p < tx.accountData.length; p++) {
-        if (tx.accountData[p].account) {
-          programIds.push(tx.accountData[p].account);
+      for (var a = 0; a < tx.accountData.length; a++) {
+        if (tx.accountData[a].account) {
+          programIds.push(tx.accountData[a].account);
         }
       }
     }
@@ -480,7 +519,7 @@ function processSwapTransaction(tx) {
       wallet: feePayer,
       tokenSymbol: tokenSymbol,
       tokenAddress: tokenAddress,
-      solAmount: solSpent,
+      solAmount: totalSolSpent,
       dex: dex,
       signature: signature
     };
@@ -527,9 +566,12 @@ app.post('/webhook', async function(req, res) {
         var swapInfo = processSwapTransaction(tx);
         if (!swapInfo) continue;
 
+        // Log every swap for debugging
+        console.log('Swap detected: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
+
         // Pre-filter tiny swaps
         if (swapInfo.solAmount < THRESHOLD_FRESH) {
-          console.log('Below threshold: ' + swapInfo.solAmount.toFixed(2) + ' SOL');
+          console.log('Below threshold: ' + swapInfo.solAmount.toFixed(2) + ' SOL < ' + THRESHOLD_FRESH);
           continue;
         }
 
