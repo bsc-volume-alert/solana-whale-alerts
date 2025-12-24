@@ -286,35 +286,30 @@ async function getTokenAge(tokenAddress) {
   }
   
   try {
-    var url = 'https://mainnet.helius-rpc.com/?api-key=' + HELIUS_API_KEY;
-    var response = await axios.post(url, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getSignaturesForAddress',
-      params: [tokenAddress, { limit: 1000 }]
-    });
+    // Use DexScreener API to get pair creation time
+    var url = 'https://api.dexscreener.com/latest/dex/tokens/' + tokenAddress;
+    var response = await axios.get(url);
     
-    if (response.data.result && response.data.result.length > 0) {
-      var signatures = response.data.result;
+    if (response.data && response.data.pairs && response.data.pairs.length > 0) {
+      // Get the oldest pair (first trading pair created)
+      var oldestPair = response.data.pairs.reduce(function(oldest, pair) {
+        if (!oldest || (pair.pairCreatedAt && pair.pairCreatedAt < oldest.pairCreatedAt)) {
+          return pair;
+        }
+        return oldest;
+      }, null);
       
-      if (signatures.length >= 1000) {
-        tokenAgeCache.set(tokenAddress, { age: null, timestamp: Date.now() });
-        return null;
-      }
-      
-      var oldestSig = signatures[signatures.length - 1];
-      var blockTime = oldestSig.blockTime;
-      
-      if (blockTime) {
-        var ageMs = Date.now() - (blockTime * 1000);
+      if (oldestPair && oldestPair.pairCreatedAt) {
+        var ageMs = Date.now() - oldestPair.pairCreatedAt;
         tokenAgeCache.set(tokenAddress, { age: ageMs, timestamp: Date.now() });
         return ageMs;
       }
     }
     
+    tokenAgeCache.set(tokenAddress, { age: null, timestamp: Date.now() });
     return null;
   } catch (error) {
-    console.error('Error fetching token age:', error.message);
+    console.error('Error fetching token age from DexScreener:', error.message);
     return null;
   }
 }
