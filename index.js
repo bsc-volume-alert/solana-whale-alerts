@@ -348,33 +348,76 @@ async function getFundingSource(walletAddress) {
   }
 }
 
+async function getTokenInfoFromDexScreener(tokenAddress) {
+  try {
+    var url = 'https://api.dexscreener.com/latest/dex/tokens/' + tokenAddress;
+    var response = await axios.get(url);
+    
+    if (response.data && response.data.pairs && response.data.pairs.length > 0) {
+      var pair = response.data.pairs[0];
+      if (pair.baseToken && pair.baseToken.address === tokenAddress) {
+        return {
+          symbol: pair.baseToken.symbol || tokenAddress.slice(0, 8),
+          name: pair.baseToken.name || 'Unknown'
+        };
+      } else if (pair.quoteToken && pair.quoteToken.address === tokenAddress) {
+        return {
+          symbol: pair.quoteToken.symbol || tokenAddress.slice(0, 8),
+          name: pair.quoteToken.name || 'Unknown'
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching token info from DexScreener:', error.message);
+    return null;
+  }
+}
+
 async function getTokenInfo(tokenAddress) {
   var cached = tokenInfoCache.get(tokenAddress);
   if (cached && Date.now() - cached.timestamp < TOKEN_INFO_CACHE_DURATION) {
     return cached.info;
   }
+  
+  var symbol = tokenAddress.slice(0, 8);
+  var name = 'Unknown';
+  
+  // Try Helius first
   try {
     var url = 'https://api.helius.xyz/v0/token-metadata?api-key=' + HELIUS_API_KEY;
     var response = await axios.post(url, { mintAccounts: [tokenAddress] });
     if (response.data && response.data.length > 0) {
       var token = response.data[0];
-      var symbol = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.symbol) ||
-                   (token.legacyMetadata && token.legacyMetadata.symbol) ||
-                   (token.offChainMetadata && token.offChainMetadata.metadata && token.offChainMetadata.metadata.symbol) ||
-                   tokenAddress.slice(0, 8);
-      var name = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.name) ||
-                 (token.legacyMetadata && token.legacyMetadata.name) ||
-                 (token.offChainMetadata && token.offChainMetadata.metadata && token.offChainMetadata.metadata.name) ||
-                 'Unknown';
-      var info = { symbol: symbol, name: name };
-      tokenInfoCache.set(tokenAddress, { info: info, timestamp: Date.now() });
-      return info;
+      symbol = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.symbol) ||
+               (token.legacyMetadata && token.legacyMetadata.symbol) ||
+               (token.offChainMetadata && token.offChainMetadata.metadata && token.offChainMetadata.metadata.symbol) ||
+               tokenAddress.slice(0, 8);
+      name = (token.onChainMetadata && token.onChainMetadata.metadata && token.onChainMetadata.metadata.data && token.onChainMetadata.metadata.data.name) ||
+             (token.legacyMetadata && token.legacyMetadata.name) ||
+             (token.offChainMetadata && token.offChainMetadata.metadata && token.offChainMetadata.metadata.name) ||
+             'Unknown';
     }
-    return { symbol: tokenAddress.slice(0, 8), name: 'Unknown' };
   } catch (error) {
-    console.error('Error fetching token info:', error.message);
-    return { symbol: tokenAddress.slice(0, 8), name: 'Unknown' };
+    console.error('Error fetching token info from Helius:', error.message);
   }
+  
+  // If Helius didn't return good data, try DexScreener as fallback
+  if (name === 'Unknown' || symbol === tokenAddress.slice(0, 8)) {
+    var dexScreenerInfo = await getTokenInfoFromDexScreener(tokenAddress);
+    if (dexScreenerInfo) {
+      if (dexScreenerInfo.name !== 'Unknown') {
+        name = dexScreenerInfo.name;
+      }
+      if (dexScreenerInfo.symbol !== tokenAddress.slice(0, 8)) {
+        symbol = dexScreenerInfo.symbol;
+      }
+    }
+  }
+  
+  var info = { symbol: symbol, name: name };
+  tokenInfoCache.set(tokenAddress, { info: info, timestamp: Date.now() });
+  return info;
 }
 
 async function getTokenAge(tokenAddress) {
@@ -855,7 +898,7 @@ app.get('/', function(req, res) {
   res.json({
     name: 'Solana Whale Alert Bot v3',
     status: 'running',
-    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'accumulation_tracking', 'multi_wallet_detection', 'stablecoin_filter'],
+    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'accumulation_tracking', 'multi_wallet_detection', 'stablecoin_filter', 'dexscreener_fallback'],
     thresholds: {
       fresh_wallets: THRESHOLD_FRESH + ' SOL',
       newish_wallets: THRESHOLD_NEWISH + ' SOL',
@@ -868,3 +911,10 @@ app.listen(PORT, function() {
   console.log('Solana Whale Alert Bot v3 running on port ' + PORT);
   console.log('Thresholds - Fresh: ' + THRESHOLD_FRESH + ' SOL, New-ish: ' + THRESHOLD_NEWISH + ' SOL, Established: ' + THRESHOLD_ESTABLISHED + ' SOL');
 });
+```
+
+**Added DexScreener fallback for token names:**
+```
+1. Try Helius first
+2. If name = "Unknown" → Try DexScreener
+3. If still no name → Show contract address
