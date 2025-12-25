@@ -1,4 +1,3 @@
-
 const express = require('express');
 const axios = require('axios');
 
@@ -38,8 +37,17 @@ const KNOWN_OLD_TOKENS = [
 
 // Dynamic thresholds based on wallet freshness
 const THRESHOLD_FRESH = 20;
-const THRESHOLD_NEWISH = 35;
-const THRESHOLD_ESTABLISHED = 50;
+const THRESHOLD_NEWISH = 30;
+const THRESHOLD_ESTABLISHED = 30;
+
+// Accumulation tracking settings
+const ACCUMULATION_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+const ACCUMULATION_THRESHOLD = 30; // Alert if wallet accumulates 30+ SOL total
+const ACCUMULATION_MIN_BUYS = 2; // Minimum buys to trigger
+
+// Multi-wallet detection settings
+const MULTI_WALLET_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MULTI_WALLET_MIN = 2; // 2+ wallets from same funder
 
 // Cluster detection settings
 const CLUSTER_WINDOW_MS = 10 * 60 * 1000;
@@ -59,6 +67,18 @@ const TOKEN_AGE_CACHE_DURATION = 3600000;
 
 const tokenInfoCache = new Map();
 const TOKEN_INFO_CACHE_DURATION = 3600000;
+
+// Accumulation tracking: wallet -> [{token, amount, timestamp}, ...]
+const walletAccumulation = new Map();
+
+// Multi-wallet tracking: funder -> [{wallet, token, amount, timestamp}, ...]
+const funderTracking = new Map();
+
+// Cooldowns for new alert types
+const accumulationAlerts = new Map();
+const multiWalletAlerts = new Map();
+const ACCUMULATION_COOLDOWN = 30 * 60 * 1000;
+const MULTI_WALLET_COOLDOWN = 30 * 60 * 1000;
 
 // Known CEX hot wallets
 const CEX_WALLETS = {
@@ -203,6 +223,74 @@ function checkForCluster(tokenAddress) {
     };
   }
   return { isCluster: false };
+}
+
+// Track wallet accumulation
+function trackAccumulation(wallet, tokenAddress, tokenSymbol, amount) {
+  var now = Date.now();
+  var key = wallet;
+  
+  if (!walletAccumulation.has(key)) {
+    walletAccumulation.set(key, []);
+  }
+  
+  var buys = walletAccumulation.get(key);
+  buys.push({ token: tokenAddress, symbol: tokenSymbol, amount: amount, timestamp: now });
+  
+  // Clean old entries
+  var validBuys = buys.filter(function(b) {
+    return now - b.timestamp < ACCUMULATION_WINDOW_MS;
+  });
+  walletAccumulation.set(key, validBuys);
+  
+  // Check for accumulation on same token
+  var tokenBuys = validBuys.filter(function(b) { return b.token === tokenAddress; });
+  if (tokenBuys.length >= ACCUMULATION_MIN_BUYS) {
+    var totalSol = tokenBuys.reduce(function(sum, b) { return sum + b.amount; }, 0);
+    if (totalSol >= ACCUMULATION_THRESHOLD) {
+      return { isAccumulating: true, buys: tokenBuys, totalSol: totalSol };
+    }
+  }
+  
+  return { isAccumulating: false };
+}
+
+// Track multi-wallet from same funder
+function trackMultiWallet(funder, wallet, tokenAddress, tokenSymbol, amount) {
+  if (!funder) return { isMultiWallet: false };
+  
+  var now = Date.now();
+  
+  if (!funderTracking.has(funder)) {
+    funderTracking.set(funder, []);
+  }
+  
+  var wallets = funderTracking.get(funder);
+  wallets.push({ wallet: wallet, token: tokenAddress, symbol: tokenSymbol, amount: amount, timestamp: now });
+  
+  // Clean old entries
+  var validWallets = wallets.filter(function(w) {
+    return now - w.timestamp < MULTI_WALLET_WINDOW_MS;
+  });
+  funderTracking.set(funder, validWallets);
+  
+  // Check for multiple wallets buying same token
+  var tokenBuys = validWallets.filter(function(w) { return w.token === tokenAddress; });
+  var uniqueWallets = [];
+  var seen = {};
+  for (var i = 0; i < tokenBuys.length; i++) {
+    if (!seen[tokenBuys[i].wallet]) {
+      seen[tokenBuys[i].wallet] = true;
+      uniqueWallets.push(tokenBuys[i]);
+    }
+  }
+  
+  if (uniqueWallets.length >= MULTI_WALLET_MIN) {
+    var totalSol = uniqueWallets.reduce(function(sum, w) { return sum + w.amount; }, 0);
+    return { isMultiWallet: true, wallets: uniqueWallets, totalSol: totalSol, funder: funder };
+  }
+  
+  return { isMultiWallet: false };
 }
 
 async function getWalletTxCount(walletAddress) {
@@ -372,6 +460,72 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
   }
 }
 
+async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenName, accumulation) {
+  try {
+    var message = '\u{1F4E6} <b>ACCUMULATION ALERT</b>\n\n';
+    message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
+    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n\n';
+    message += '<b>' + accumulation.buys.length + ' buys in last 2 hours:</b>\n\n';
+    
+    for (var i = 0; i < accumulation.buys.length; i++) {
+      var buy = accumulation.buys[i];
+      var timeAgo = Math.floor((Date.now() - buy.timestamp) / 60000);
+      message += '\u{2022} ' + buy.amount.toFixed(1) + ' SOL (' + timeAgo + ' min ago)\n';
+    }
+    
+    message += '\n<b>Total:</b> ' + accumulation.totalSol.toFixed(1) + ' SOL\n\n';
+    message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
+    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+
+    var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
+    await axios.post(telegramUrl, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: message,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    });
+
+    console.log('ACCUMULATION ALERT sent for ' + tokenSymbol);
+  } catch (error) {
+    console.error('Error sending accumulation alert:', error.message);
+  }
+}
+
+async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, multiWallet) {
+  try {
+    var shortFunder = multiWallet.funder.slice(0, 4) + '...' + multiWallet.funder.slice(-4);
+    
+    var message = '\u{1F441} <b>MULTI-WALLET ALERT</b>\n\n';
+    message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
+    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    message += '<b>Funder:</b> <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n\n';
+    message += '<b>' + multiWallet.wallets.length + ' wallets from same source bought:</b>\n\n';
+    
+    for (var i = 0; i < multiWallet.wallets.length; i++) {
+      var w = multiWallet.wallets[i];
+      var shortWallet = w.wallet.slice(0, 4) + '...' + w.wallet.slice(-4);
+      message += '\u{2022} <a href="https://gmgn.ai/sol/address/' + w.wallet + '">' + shortWallet + '</a>: ' + w.amount.toFixed(1) + ' SOL\n';
+    }
+    
+    message += '\n<b>Total:</b> ' + multiWallet.totalSol.toFixed(1) + ' SOL\n\n';
+    message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
+    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+
+    var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
+    await axios.post(telegramUrl, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: message,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    });
+
+    console.log('MULTI-WALLET ALERT sent for ' + tokenSymbol);
+  } catch (error) {
+    console.error('Error sending multi-wallet alert:', error.message);
+  }
+}
+
 async function sendTelegramAlert(swapData) {
   try {
     var wallet = swapData.wallet;
@@ -455,21 +609,35 @@ function processSwapTransaction(tx) {
     var tokenTransfers = tx.tokenTransfers || [];
     var instructions = tx.instructions || [];
 
+    // FIX 1: Better SOL calculation
     var solSpent = 0;
+    
+    // Native SOL transfers
     for (var i = 0; i < nativeTransfers.length; i++) {
       var transfer = nativeTransfers[i];
       if (transfer.fromUserAccount === feePayer) {
-        solSpent += (transfer.amount || 0) / 1e9;
+        var amount = transfer.amount || 0;
+        // Convert lamports to SOL
+        solSpent += amount / 1e9;
       }
     }
 
+    // WSOL transfers - FIX: Handle both raw and decimal formats
     for (var w = 0; w < tokenTransfers.length; w++) {
       var tt = tokenTransfers[w];
       if (tt.mint === WSOL_MINT && tt.fromUserAccount === feePayer) {
-        solSpent += (tt.tokenAmount || 0);
+        var wsolAmount = tt.tokenAmount || 0;
+        
+        // If amount looks like raw lamports (> 1000), convert
+        if (wsolAmount > 1000) {
+          wsolAmount = wsolAmount / 1e9;
+        }
+        
+        solSpent += wsolAmount;
       }
     }
 
+    // Sanity check - skip unrealistic amounts
     if (solSpent > 10000) {
       console.log('Warning: Unrealistic SOL amount ' + solSpent + ', skipping');
       return null;
@@ -568,9 +736,29 @@ app.post('/webhook', async function(req, res) {
 
         var swapInfo = processSwapTransaction(tx);
         if (!swapInfo) continue;
+        if (!swapInfo.tokenAddress) continue;
 
         console.log('Swap: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
+        // Track ALL buys for accumulation (even small ones)
+        var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
+        swapInfo.tokenSymbol = tokenInfo.symbol;
+        swapInfo.tokenName = tokenInfo.name;
+
+        // Check accumulation for any buy >= 5 SOL
+        if (swapInfo.solAmount >= 5) {
+          var accumulation = trackAccumulation(swapInfo.wallet, swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.solAmount);
+          if (accumulation.isAccumulating) {
+            var accumKey = swapInfo.wallet + '-' + swapInfo.tokenAddress;
+            var lastAccumAlert = accumulationAlerts.get(accumKey);
+            if (!lastAccumAlert || Date.now() - lastAccumAlert > ACCUMULATION_COOLDOWN) {
+              await sendAccumulationAlert(swapInfo.wallet, swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, accumulation);
+              accumulationAlerts.set(accumKey, Date.now());
+            }
+          }
+        }
+
+        // Skip small buys for main alert
         if (swapInfo.solAmount < THRESHOLD_FRESH) continue;
 
         var txCount = await getWalletTxCount(swapInfo.wallet);
@@ -584,19 +772,26 @@ app.post('/webhook', async function(req, res) {
 
         console.log('ALERT: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
-        if (swapInfo.tokenAddress) {
-          var tokenInfo = await getTokenInfo(swapInfo.tokenAddress);
-          swapInfo.tokenSymbol = tokenInfo.symbol;
-          swapInfo.tokenName = tokenInfo.name;
-          swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
-        } else {
-          swapInfo.tokenName = 'Unknown';
-        }
+        swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
 
+        // Get funding source for fresh/new wallets
         if (txCount >= 0 && txCount < 50) {
           var funding = await getFundingSource(swapInfo.wallet);
           swapInfo.fundingSource = funding.wallet;
           swapInfo.fundingCex = funding.cex;
+          
+          // Track multi-wallet from same funder
+          if (funding.wallet) {
+            var multiWallet = trackMultiWallet(funding.wallet, swapInfo.wallet, swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.solAmount);
+            if (multiWallet.isMultiWallet) {
+              var multiKey = funding.wallet + '-' + swapInfo.tokenAddress;
+              var lastMultiAlert = multiWalletAlerts.get(multiKey);
+              if (!lastMultiAlert || Date.now() - lastMultiAlert > MULTI_WALLET_COOLDOWN) {
+                await sendMultiWalletAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, multiWallet);
+                multiWalletAlerts.set(multiKey, Date.now());
+              }
+            }
+          }
         } else {
           swapInfo.fundingSource = null;
           swapInfo.fundingCex = null;
@@ -628,6 +823,8 @@ app.get('/health', function(req, res) {
   res.json({ 
     status: 'healthy', 
     dedupCacheSize: recentAlerts.size,
+    accumulationTracking: walletAccumulation.size,
+    funderTracking: funderTracking.size,
     thresholds: {
       fresh: THRESHOLD_FRESH,
       newish: THRESHOLD_NEWISH,
@@ -638,9 +835,9 @@ app.get('/health', function(req, res) {
 
 app.get('/', function(req, res) {
   res.json({
-    name: 'Solana Whale Alert Bot v2',
+    name: 'Solana Whale Alert Bot v3',
     status: 'running',
-    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex'],
+    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'accumulation_tracking', 'multi_wallet_detection'],
     thresholds: {
       fresh_wallets: THRESHOLD_FRESH + ' SOL',
       newish_wallets: THRESHOLD_NEWISH + ' SOL',
@@ -650,6 +847,45 @@ app.get('/', function(req, res) {
 });
 
 app.listen(PORT, function() {
-  console.log('Solana Whale Alert Bot v2 running on port ' + PORT);
+  console.log('Solana Whale Alert Bot v3 running on port ' + PORT);
   console.log('Thresholds - Fresh: ' + THRESHOLD_FRESH + ' SOL, New-ish: ' + THRESHOLD_NEWISH + ' SOL, Established: ' + THRESHOLD_ESTABLISHED + ' SOL');
 });
+```
+
+**New features added:**
+
+1. **Fixed 0.00 SOL bug** - Better WSOL parsing, detects if amount is raw lamports and converts
+
+2. **Accumulation Alert** 📦
+   - Tracks buys >= 5 SOL per wallet
+   - Alerts when same wallet buys same token multiple times
+   - Threshold: 30+ SOL total in 2 hours
+```
+   📦 ACCUMULATION ALERT
+   
+   Token: PEPE
+   Wallet: J7g5...NnuT
+   
+   3 buys in last 2 hours:
+   • 15.0 SOL (45 min ago)
+   • 12.0 SOL (20 min ago)
+   • 10.0 SOL (5 min ago)
+   
+   Total: 37.0 SOL
+```
+
+3. **Multi-Wallet Alert** 👁
+   - Tracks wallets from same funding source
+   - Alerts when 2+ wallets from same funder buy same token
+```
+   👁 MULTI-WALLET ALERT
+   
+   Token: PEPE
+   Funder: 8xK2...9mNp
+   
+   3 wallets from same source bought:
+   • J7g5...NnuT: 25.0 SOL
+   • K9h3...PqRs: 30.0 SOL
+   • L2m4...TuVw: 28.0 SOL
+   
+   Total: 83.0 SOL
