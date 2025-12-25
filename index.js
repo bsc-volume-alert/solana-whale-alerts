@@ -13,6 +13,19 @@ const PORT = process.env.PORT || 3000;
 // WSOL mint address
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
+// Stablecoins to filter out - not alpha signals
+const STABLECOINS = [
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+  'USDH1SM1ojwWUga67PGrgFWUHibbjqMvuMaDkRJTgkX',  // USDH
+  'USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA',  // USDS
+  'EjmyN6qEC1Tf1JxiG1ae7UTJhUxSwk1TCCWMpXLeBjVx', // DAI
+  'Ea5SjE2Y6yvCeW5dYTn7PYMuW5ikXkvbGdcmSnXeaLjS', // PAI
+  'BJUH9GJLaMSLV1E7B3SQLCy9eCfyr6zsrwGcpS2MkqR1', // wUST
+  '9vMJfxuKxXBoEa7rM12mYLMwTacLMLDJqHozw96WQL8i', // UST
+  '7kbnvuGBxxj8AG9qp8Scn56muWGaRaFqxg1FsRp3PaFT', // UXD
+];
+
 // Known old tokens - skip age calculation for these
 const KNOWN_OLD_TOKENS = [
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
@@ -737,6 +750,11 @@ app.post('/webhook', async function(req, res) {
         var swapInfo = processSwapTransaction(tx);
         if (!swapInfo) continue;
         if (!swapInfo.tokenAddress) continue;
+        
+        // Skip stablecoins - not alpha signals
+        if (STABLECOINS.includes(swapInfo.tokenAddress)) {
+          continue;
+        }
 
         console.log('Swap: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
@@ -837,7 +855,7 @@ app.get('/', function(req, res) {
   res.json({
     name: 'Solana Whale Alert Bot v3',
     status: 'running',
-    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'accumulation_tracking', 'multi_wallet_detection'],
+    features: ['cluster_detection', 'dynamic_thresholds', 'token_age', 'extended_dex', 'accumulation_tracking', 'multi_wallet_detection', 'stablecoin_filter'],
     thresholds: {
       fresh_wallets: THRESHOLD_FRESH + ' SOL',
       newish_wallets: THRESHOLD_NEWISH + ' SOL',
@@ -850,42 +868,3 @@ app.listen(PORT, function() {
   console.log('Solana Whale Alert Bot v3 running on port ' + PORT);
   console.log('Thresholds - Fresh: ' + THRESHOLD_FRESH + ' SOL, New-ish: ' + THRESHOLD_NEWISH + ' SOL, Established: ' + THRESHOLD_ESTABLISHED + ' SOL');
 });
-```
-
-**New features added:**
-
-1. **Fixed 0.00 SOL bug** - Better WSOL parsing, detects if amount is raw lamports and converts
-
-2. **Accumulation Alert** 📦
-   - Tracks buys >= 5 SOL per wallet
-   - Alerts when same wallet buys same token multiple times
-   - Threshold: 30+ SOL total in 2 hours
-```
-   📦 ACCUMULATION ALERT
-   
-   Token: PEPE
-   Wallet: J7g5...NnuT
-   
-   3 buys in last 2 hours:
-   • 15.0 SOL (45 min ago)
-   • 12.0 SOL (20 min ago)
-   • 10.0 SOL (5 min ago)
-   
-   Total: 37.0 SOL
-```
-
-3. **Multi-Wallet Alert** 👁
-   - Tracks wallets from same funding source
-   - Alerts when 2+ wallets from same funder buy same token
-```
-   👁 MULTI-WALLET ALERT
-   
-   Token: PEPE
-   Funder: 8xK2...9mNp
-   
-   3 wallets from same source bought:
-   • J7g5...NnuT: 25.0 SOL
-   • K9h3...PqRs: 30.0 SOL
-   • L2m4...TuVw: 28.0 SOL
-   
-   Total: 83.0 SOL
