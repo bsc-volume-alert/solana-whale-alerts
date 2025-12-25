@@ -38,7 +38,7 @@ const KNOWN_OLD_TOKENS = [
 // Dynamic thresholds based on wallet freshness
 const THRESHOLD_FRESH = 20;
 const THRESHOLD_NEWISH = 35;
-const THRESHOLD_ESTABLISHED = 100;
+const THRESHOLD_ESTABLISHED = 50;
 
 // Cluster detection settings
 const CLUSTER_WINDOW_MS = 10 * 60 * 1000;
@@ -286,12 +286,10 @@ async function getTokenAge(tokenAddress) {
   }
   
   try {
-    // Use DexScreener API to get pair creation time
     var url = 'https://api.dexscreener.com/latest/dex/tokens/' + tokenAddress;
     var response = await axios.get(url);
     
     if (response.data && response.data.pairs && response.data.pairs.length > 0) {
-      // Get the oldest pair (first trading pair created)
       var oldestPair = response.data.pairs.reduce(function(oldest, pair) {
         if (!oldest || (pair.pairCreatedAt && pair.pairCreatedAt < oldest.pairCreatedAt)) {
           return pair;
