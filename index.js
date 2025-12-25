@@ -1,3 +1,4 @@
+
 const express = require('express');
 const axios = require('axios');
 
@@ -350,7 +351,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
       var buy = cluster.buys[i];
       var shortWallet = buy.wallet.slice(0, 4) + '...' + buy.wallet.slice(-4);
       var fundingStr = buy.fundingCex ? ' (' + buy.fundingCex + ')' : '';
-      message += '\u{2022} <a href="https://app.cielo.finance/profile/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
+      message += '\u{2022} <a href="https://gmgn.ai/sol/address/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
     }
     
     message += '\n<b>Total:</b> ' + cluster.totalSol.toFixed(1) + ' SOL\n\n';
@@ -416,7 +417,7 @@ async function sendTelegramAlert(swapData) {
     var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n\n';
     message += '<b>Token:</b> ' + tokenDisplay + '\n';
     message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
-    message += '<b>Wallet:</b> <a href="https://app.cielo.finance/profile/' + wallet + '">' + shortWallet + '</a>\n';
+    message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + shortWallet + '</a>\n';
     message += '<b>Amount:</b> ' + solAmount.toFixed(2) + ' SOL\n';
     message += '<b>DEX:</b> ' + dex + '\n\n';
     message += freshnessLine + '\n';
