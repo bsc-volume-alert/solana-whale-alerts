@@ -355,15 +355,10 @@ async function getTokenInfoFromDexScreener(tokenAddress) {
     
     if (response.data && response.data.pairs && response.data.pairs.length > 0) {
       var pair = response.data.pairs[0];
-      if (pair.baseToken && pair.baseToken.address === tokenAddress) {
+      if (pair.baseToken && pair.baseToken.symbol) {
         return {
-          symbol: pair.baseToken.symbol || tokenAddress.slice(0, 8),
+          symbol: pair.baseToken.symbol,
           name: pair.baseToken.name || 'Unknown'
-        };
-      } else if (pair.quoteToken && pair.quoteToken.address === tokenAddress) {
-        return {
-          symbol: pair.quoteToken.symbol || tokenAddress.slice(0, 8),
-          name: pair.quoteToken.name || 'Unknown'
         };
       }
     }
@@ -911,10 +906,3 @@ app.listen(PORT, function() {
   console.log('Solana Whale Alert Bot v3 running on port ' + PORT);
   console.log('Thresholds - Fresh: ' + THRESHOLD_FRESH + ' SOL, New-ish: ' + THRESHOLD_NEWISH + ' SOL, Established: ' + THRESHOLD_ESTABLISHED + ' SOL');
 });
-```
-
-**Added DexScreener fallback for token names:**
-```
-1. Try Helius first
-2. If name = "Unknown" → Try DexScreener
-3. If still no name → Show contract address
