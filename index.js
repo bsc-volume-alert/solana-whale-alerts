@@ -538,7 +538,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenMetri
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
     var message = '\u{1F6A8} <b>CLUSTER ALERT</b> \u{1F6A8}\n';
-    message += '\u{1F534} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\u{1F534} \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\n';
     message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
@@ -592,7 +592,7 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
     var message = '\u{1F4E6} <b>ACCUMULATION ALERT</b>\n';
-    message += '\u{1F7E3} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\u{1F7E3} \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\n';
     message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
@@ -644,7 +644,7 @@ async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, tokenM
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
     var message = '\u{1F441} <b>MULTI-WALLET ALERT</b>\n';
-    message += '\u{1F7E0} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\u{1F7E0} \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\n';
     message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
@@ -734,7 +734,7 @@ async function sendTelegramAlert(swapData) {
     var vol6h = formatVolume(tokenMetrics.volume6h);
 
     var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n';
-    message += '\u{1F535} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\u{1F535} \u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\u{2501}\n\n';
     message += '\u{1FA99} Token: ' + tokenDisplay + '\n';
     message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
