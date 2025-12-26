@@ -13,8 +13,9 @@ const PORT = process.env.PORT || 3000;
 // WSOL mint address
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
-// Stablecoins to filter out - not alpha signals
+// Stablecoins and wrapped majors to filter out - not alpha signals
 const STABLECOINS = [
+  // Stablecoins
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
   'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
   'USDH1SM1ojwWUga67PGrgFWUHibbjqMvuMaDkRJTgkX',  // USDH
@@ -24,6 +25,13 @@ const STABLECOINS = [
   'BJUH9GJLaMSLV1E7B3SQLCy9eCfyr6zsrwGcpS2MkqR1', // wUST
   '9vMJfxuKxXBoEa7rM12mYLMwTacLMLDJqHozw96WQL8i', // UST
   '7kbnvuGBxxj8AG9qp8Scn56muWGaRaFqxg1FsRp3PaFT', // UXD
+  // Wrapped ETH
+  '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs', // WETH (Wormhole)
+  'So11111111111111111111111111111111111111112',  // WSOL
+  // Wrapped BTC
+  'cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij', // cbBTC (Coinbase)
+  '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh', // WBTC (Wormhole)
+  '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E', // BTC (Sollet)
 ];
 
 // Known old tokens - skip age calculation for these
