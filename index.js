@@ -547,8 +547,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenMetri
     if (ageStr) {
       message += '\u{23F0} Age: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
-    message += '\n\u{1F7E1} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
-    message += '\u{1F465} <b>' + cluster.buys.length + ' fresh wallets bought in 10 mins:</b>\n\n';
+    message += '\n\u{1F465} <b>' + cluster.buys.length + ' fresh wallets bought in 10 mins:</b>\n\n';
     
     for (var i = 0; i < cluster.buys.length; i++) {
       var buy = cluster.buys[i];
@@ -557,8 +556,7 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenMetri
       message += '\u{1F45B} <a href="https://gmgn.ai/sol/address/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
     }
     
-    message += '\n\u{1F4B0} Total: ' + cluster.totalSol.toFixed(1) + ' SOL\n';
-    message += '\n\u{1F7E2} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\n\u{1F4B0} Total: ' + cluster.totalSol.toFixed(1) + ' SOL\n\n';
     if (price1h || price6h) {
       message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
     }
@@ -598,8 +596,7 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
     if (mcStr) {
       message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
-    message += '\n\u{1F7E1} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
-    message += '\u{1F45B} Wallet: <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n';
+    message += '\n\u{1F45B} Wallet: <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n';
     message += '\u{1F504} <b>' + accumulation.buys.length + ' buys in last 2 hours:</b>\n\n';
     
     for (var i = 0; i < accumulation.buys.length; i++) {
@@ -608,8 +605,7 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
       message += '\u{1F4B0} ' + buy.amount.toFixed(1) + ' SOL (' + timeAgo + ' min ago)\n';
     }
     
-    message += '\n\u{1F4B5} Total: ' + accumulation.totalSol.toFixed(1) + ' SOL\n';
-    message += '\n\u{1F7E2} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\n\u{1F4B5} Total: ' + accumulation.totalSol.toFixed(1) + ' SOL\n\n';
     if (price1h || price6h) {
       message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
     }
@@ -650,8 +646,7 @@ async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, tokenM
     if (mcStr) {
       message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
-    message += '\n\u{1F7E1} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
-    message += '\u{1F3E6} Funder: <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n';
+    message += '\n\u{1F3E6} Funder: <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n';
     message += '\u{1F465} <b>' + multiWallet.wallets.length + ' wallets from same source:</b>\n\n';
     
     for (var i = 0; i < multiWallet.wallets.length; i++) {
@@ -660,8 +655,7 @@ async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, tokenM
       message += '\u{1F45B} <a href="https://gmgn.ai/sol/address/' + w.wallet + '">' + shortWallet + '</a>: ' + w.amount.toFixed(1) + ' SOL\n';
     }
     
-    message += '\n\u{1F4B0} Total: ' + multiWallet.totalSol.toFixed(1) + ' SOL\n';
-    message += '\n\u{1F7E2} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\n\u{1F4B0} Total: ' + multiWallet.totalSol.toFixed(1) + ' SOL\n\n';
     if (price1h || price6h) {
       message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
     }
@@ -743,7 +737,7 @@ async function sendTelegramAlert(swapData) {
     if (ageStr) {
       message += '\u{23F0} Age: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
-    message += '\n\u{1F7E1} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\n';
     message += '\u{1F45B} Wallet: <a href="https://gmgn.ai/sol/address/' + wallet + '">' + shortWallet + '</a>\n';
     message += '\u{1F4B0} Amount: ' + solAmount.toFixed(2) + ' SOL\n';
     message += '\u{1F504} DEX: ' + dex + '\n';
@@ -751,7 +745,7 @@ async function sendTelegramAlert(swapData) {
     if (fundingLine) {
       message += fundingLine + '\n';
     }
-    message += '\n\u{1F7E2} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n';
+    message += '\n';
     if (price1h || price6h) {
       message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
     }
