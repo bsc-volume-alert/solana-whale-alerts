@@ -537,32 +537,35 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenMetri
     var vol1h = formatVolume(tokenMetrics.volume1h);
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
-    var message = '\u{1F6A8} <b>CLUSTER ALERT - COORDINATED BUYING</b> \u{1F6A8}\n\n';
-    message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
-    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    var message = '\u{1F6A8} <b>CLUSTER ALERT</b> \u{1F6A8}\n';
+    message += '\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\u{1F7E5}\n\n';
+    message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
+    message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
-      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+      message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
     if (ageStr) {
-      message += '<b>Token Age:</b> ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
+      message += '\u{23F0} Age: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
-    if (price1h || price6h) {
-      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
-    }
-    if (vol1h || vol6h) {
-      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
-    }
-    message += '\n<b>' + cluster.buys.length + ' fresh wallets bought in last 10 mins:</b>\n\n';
+    message += '\n\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\n\n';
+    message += '\u{1F465} <b>' + cluster.buys.length + ' fresh wallets bought in 10 mins:</b>\n\n';
     
     for (var i = 0; i < cluster.buys.length; i++) {
       var buy = cluster.buys[i];
       var shortWallet = buy.wallet.slice(0, 4) + '...' + buy.wallet.slice(-4);
       var fundingStr = buy.fundingCex ? ' (' + buy.fundingCex + ')' : '';
-      message += '\u{2022} <a href="https://gmgn.ai/sol/address/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
+      message += '\u{1F45B} <a href="https://gmgn.ai/sol/address/' + buy.wallet + '">' + shortWallet + '</a>: ' + buy.solAmount.toFixed(1) + ' SOL' + fundingStr + '\n';
     }
     
-    message += '\n<b>Total:</b> ' + cluster.totalSol.toFixed(1) + ' SOL\n\n';
-    message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
+    message += '\n\u{1F4B0} Total: ' + cluster.totalSol.toFixed(1) + ' SOL\n';
+    message += '\n\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\n\n';
+    if (price1h || price6h) {
+      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '\u{1F4CA} Vol: ' + (vol1h || 'N/A') + ' (1h) \u{2022} ' + (vol6h || 'N/A') + ' (6h)\n';
+    }
+    message += '\n\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
     message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
     message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
@@ -588,29 +591,32 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
     var vol1h = formatVolume(tokenMetrics.volume1h);
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
-    var message = '\u{1F4E6} <b>ACCUMULATION ALERT</b>\n\n';
-    message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
-    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    var message = '\u{1F4E6} <b>ACCUMULATION ALERT</b>\n';
+    message += '\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\u{1F7EA}\n\n';
+    message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
+    message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
-      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+      message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
-    if (price1h || price6h) {
-      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
-    }
-    if (vol1h || vol6h) {
-      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
-    }
-    message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n\n';
-    message += '<b>' + accumulation.buys.length + ' buys in last 2 hours:</b>\n\n';
+    message += '\n\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\n\n';
+    message += '\u{1F45B} Wallet: <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n';
+    message += '\u{1F504} <b>' + accumulation.buys.length + ' buys in last 2 hours:</b>\n\n';
     
     for (var i = 0; i < accumulation.buys.length; i++) {
       var buy = accumulation.buys[i];
       var timeAgo = Math.floor((Date.now() - buy.timestamp) / 60000);
-      message += '\u{2022} ' + buy.amount.toFixed(1) + ' SOL (' + timeAgo + ' min ago)\n';
+      message += '\u{1F4B0} ' + buy.amount.toFixed(1) + ' SOL (' + timeAgo + ' min ago)\n';
     }
     
-    message += '\n<b>Total:</b> ' + accumulation.totalSol.toFixed(1) + ' SOL\n\n';
-    message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
+    message += '\n\u{1F4B5} Total: ' + accumulation.totalSol.toFixed(1) + ' SOL\n';
+    message += '\n\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\n\n';
+    if (price1h || price6h) {
+      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '\u{1F4CA} Vol: ' + (vol1h || 'N/A') + ' (1h) \u{2022} ' + (vol6h || 'N/A') + ' (6h)\n';
+    }
+    message += '\n\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
     message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
     message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
@@ -637,29 +643,32 @@ async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, tokenM
     var vol1h = formatVolume(tokenMetrics.volume1h);
     var vol6h = formatVolume(tokenMetrics.volume6h);
     
-    var message = '\u{1F441} <b>MULTI-WALLET ALERT</b>\n\n';
-    message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
-    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    var message = '\u{1F441} <b>MULTI-WALLET ALERT</b>\n';
+    message += '\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\u{1F7E7}\n\n';
+    message += '\u{1FA99} Token: ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
+    message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
-      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+      message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
-    if (price1h || price6h) {
-      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
-    }
-    if (vol1h || vol6h) {
-      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
-    }
-    message += '<b>Funder:</b> <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n\n';
-    message += '<b>' + multiWallet.wallets.length + ' wallets from same source bought:</b>\n\n';
+    message += '\n\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\n\n';
+    message += '\u{1F3E6} Funder: <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n';
+    message += '\u{1F465} <b>' + multiWallet.wallets.length + ' wallets from same source:</b>\n\n';
     
     for (var i = 0; i < multiWallet.wallets.length; i++) {
       var w = multiWallet.wallets[i];
       var shortWallet = w.wallet.slice(0, 4) + '...' + w.wallet.slice(-4);
-      message += '\u{2022} <a href="https://gmgn.ai/sol/address/' + w.wallet + '">' + shortWallet + '</a>: ' + w.amount.toFixed(1) + ' SOL\n';
+      message += '\u{1F45B} <a href="https://gmgn.ai/sol/address/' + w.wallet + '">' + shortWallet + '</a>: ' + w.amount.toFixed(1) + ' SOL\n';
     }
     
-    message += '\n<b>Total:</b> ' + multiWallet.totalSol.toFixed(1) + ' SOL\n\n';
-    message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
+    message += '\n\u{1F4B0} Total: ' + multiWallet.totalSol.toFixed(1) + ' SOL\n';
+    message += '\n\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\n\n';
+    if (price1h || price6h) {
+      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '\u{1F4CA} Vol: ' + (vol1h || 'N/A') + ' (1h) \u{2022} ' + (vol6h || 'N/A') + ' (6h)\n';
+    }
+    message += '\n\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
     message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
     message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
@@ -694,17 +703,17 @@ async function sendTelegramAlert(swapData) {
     var freshnessLine;
     if (txCount >= 0) {
       var indicator = getFreshnessIndicator(txCount);
-      freshnessLine = indicator.emoji + ' <b>' + indicator.label + '</b> (' + txCount + ' transactions)';
+      freshnessLine = indicator.emoji + ' <b>' + indicator.label + '</b> (' + txCount + ' tx)';
     } else {
       freshnessLine = '\u{26AB} <b>UNKNOWN</b> (could not fetch)';
     }
 
     var fundingLine = '';
     if (fundingCex) {
-      fundingLine = '\u{1F4B0} Funded from: <b>' + fundingCex + '</b>';
+      fundingLine = '\u{1F3E6} Funded: <b>' + fundingCex + '</b>';
     } else if (fundingSource) {
       var shortSource = fundingSource.slice(0, 4) + '...' + fundingSource.slice(-4);
-      fundingLine = '\u{1F4B0} Funded from: ' + shortSource;
+      fundingLine = '\u{1F3E6} Funded: ' + shortSource;
     }
 
     var shortWallet = wallet.slice(0, 4) + '...' + wallet.slice(-4);
@@ -724,29 +733,30 @@ async function sendTelegramAlert(swapData) {
     var vol1h = formatVolume(tokenMetrics.volume1h);
     var vol6h = formatVolume(tokenMetrics.volume6h);
 
-    var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n\n';
-    message += '<b>Token:</b> ' + tokenDisplay + '\n';
-    message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n';
+    message += '\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\u{1F7E6}\n\n';
+    message += '\u{1FA99} Token: ' + tokenDisplay + '\n';
+    message += '\u{1F4CD} Contract: <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
     if (mcStr) {
-      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+      message += '\u{1F48E} Market Cap: ' + mcStr + '\n';
     }
-    message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + shortWallet + '</a>\n';
-    message += '<b>Amount:</b> ' + solAmount.toFixed(2) + ' SOL\n';
-    message += '<b>DEX:</b> ' + dex + '\n\n';
-    message += freshnessLine + '\n';
-    
     if (ageStr) {
-      message += '\u{23F0} Token: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
+      message += '\u{23F0} Age: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
     }
-    if (price1h || price6h) {
-      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
-    }
-    if (vol1h || vol6h) {
-      message += '\u{1F4B5} Vol: ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
-    }
-    
+    message += '\n\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\u{1F7E8}\n\n';
+    message += '\u{1F45B} Wallet: <a href="https://gmgn.ai/sol/address/' + wallet + '">' + shortWallet + '</a>\n';
+    message += '\u{1F4B0} Amount: ' + solAmount.toFixed(2) + ' SOL\n';
+    message += '\u{1F504} DEX: ' + dex + '\n';
+    message += freshnessLine + '\n';
     if (fundingLine) {
       message += fundingLine + '\n';
+    }
+    message += '\n\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\u{1F7E9}\n\n';
+    if (price1h || price6h) {
+      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) \u{2022} ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '\u{1F4CA} Vol: ' + (vol1h || 'N/A') + ' (1h) \u{2022} ' + (vol6h || 'N/A') + ' (6h)\n';
     }
     message += '\n\u{1F517} <a href="https://solscan.io/tx/' + signature + '">TX</a>';
     message += ' | <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
