@@ -423,14 +423,16 @@ async function getTokenInfo(tokenAddress) {
   return info;
 }
 
-async function getTokenAge(tokenAddress) {
+async function getTokenMetrics(tokenAddress) {
+  var emptyMetrics = { age: null, marketCap: null, priceChange1h: null, priceChange6h: null, volume1h: null, volume6h: null };
+  
   if (KNOWN_OLD_TOKENS.includes(tokenAddress)) {
-    return null;
+    return emptyMetrics;
   }
   
   var cached = tokenAgeCache.get(tokenAddress);
   if (cached && Date.now() - cached.timestamp < TOKEN_AGE_CACHE_DURATION) {
-    return cached.age;
+    return cached.metrics;
   }
   
   try {
@@ -438,6 +440,14 @@ async function getTokenAge(tokenAddress) {
     var response = await axios.get(url);
     
     if (response.data && response.data.pairs && response.data.pairs.length > 0) {
+      // Find the pair with highest liquidity for best data
+      var bestPair = response.data.pairs.reduce(function(best, pair) {
+        var bestLiq = (best && best.liquidity && best.liquidity.usd) || 0;
+        var pairLiq = (pair.liquidity && pair.liquidity.usd) || 0;
+        return pairLiq > bestLiq ? pair : best;
+      }, null);
+      
+      // Find oldest pair for age
       var oldestPair = response.data.pairs.reduce(function(oldest, pair) {
         if (!oldest || (pair.pairCreatedAt && pair.pairCreatedAt < oldest.pairCreatedAt)) {
           return pair;
@@ -445,18 +455,24 @@ async function getTokenAge(tokenAddress) {
         return oldest;
       }, null);
       
-      if (oldestPair && oldestPair.pairCreatedAt) {
-        var ageMs = Date.now() - oldestPair.pairCreatedAt;
-        tokenAgeCache.set(tokenAddress, { age: ageMs, timestamp: Date.now() });
-        return ageMs;
-      }
+      var metrics = {
+        age: oldestPair && oldestPair.pairCreatedAt ? Date.now() - oldestPair.pairCreatedAt : null,
+        marketCap: bestPair && bestPair.marketCap ? bestPair.marketCap : null,
+        priceChange1h: bestPair && bestPair.priceChange && bestPair.priceChange.h1 !== undefined ? bestPair.priceChange.h1 : null,
+        priceChange6h: bestPair && bestPair.priceChange && bestPair.priceChange.h6 !== undefined ? bestPair.priceChange.h6 : null,
+        volume1h: bestPair && bestPair.volume && bestPair.volume.h1 !== undefined ? bestPair.volume.h1 : null,
+        volume6h: bestPair && bestPair.volume && bestPair.volume.h6 !== undefined ? bestPair.volume.h6 : null
+      };
+      
+      tokenAgeCache.set(tokenAddress, { metrics: metrics, timestamp: Date.now() });
+      return metrics;
     }
     
-    tokenAgeCache.set(tokenAddress, { age: null, timestamp: Date.now() });
-    return null;
+    tokenAgeCache.set(tokenAddress, { metrics: emptyMetrics, timestamp: Date.now() });
+    return emptyMetrics;
   } catch (error) {
-    console.error('Error fetching token age from DexScreener:', error.message);
-    return null;
+    console.error('Error fetching token metrics from DexScreener:', error.message);
+    return emptyMetrics;
   }
 }
 
@@ -481,16 +497,60 @@ function formatAge(ageMs) {
   }
 }
 
-async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, cluster) {
+function formatMarketCap(mc) {
+  if (!mc && mc !== 0) return null;
+  if (mc >= 1000000000) {
+    return '$' + (mc / 1000000000).toFixed(2) + 'B';
+  } else if (mc >= 1000000) {
+    return '$' + (mc / 1000000).toFixed(2) + 'M';
+  } else if (mc >= 1000) {
+    return '$' + (mc / 1000).toFixed(1) + 'K';
+  } else {
+    return '$' + mc.toFixed(0);
+  }
+}
+
+function formatVolume(vol) {
+  if (!vol && vol !== 0) return null;
+  if (vol >= 1000000) {
+    return '$' + (vol / 1000000).toFixed(2) + 'M';
+  } else if (vol >= 1000) {
+    return '$' + (vol / 1000).toFixed(1) + 'K';
+  } else {
+    return '$' + vol.toFixed(0);
+  }
+}
+
+function formatPriceChange(change) {
+  if (change === null || change === undefined) return null;
+  var sign = change >= 0 ? '+' : '';
+  return sign + change.toFixed(1) + '%';
+}
+
+async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenMetrics, cluster) {
   try {
-    var ageStr = formatAge(tokenAge);
-    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000;
+    var ageStr = formatAge(tokenMetrics.age);
+    var isNewToken = tokenMetrics.age && tokenMetrics.age < 24 * 60 * 60 * 1000;
+    var mcStr = formatMarketCap(tokenMetrics.marketCap);
+    var price1h = formatPriceChange(tokenMetrics.priceChange1h);
+    var price6h = formatPriceChange(tokenMetrics.priceChange6h);
+    var vol1h = formatVolume(tokenMetrics.volume1h);
+    var vol6h = formatVolume(tokenMetrics.volume6h);
     
     var message = '\u{1F6A8} <b>CLUSTER ALERT - COORDINATED BUYING</b> \u{1F6A8}\n\n';
     message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    if (mcStr) {
+      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+    }
     if (ageStr) {
       message += '<b>Token Age:</b> ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
+    }
+    if (price1h || price6h) {
+      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
     }
     message += '\n<b>' + cluster.buys.length + ' fresh wallets bought in last 10 mins:</b>\n\n';
     
@@ -520,11 +580,26 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
   }
 }
 
-async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenName, accumulation) {
+async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenName, tokenMetrics, accumulation) {
   try {
+    var mcStr = formatMarketCap(tokenMetrics.marketCap);
+    var price1h = formatPriceChange(tokenMetrics.priceChange1h);
+    var price6h = formatPriceChange(tokenMetrics.priceChange6h);
+    var vol1h = formatVolume(tokenMetrics.volume1h);
+    var vol6h = formatVolume(tokenMetrics.volume6h);
+    
     var message = '\u{1F4E6} <b>ACCUMULATION ALERT</b>\n\n';
     message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    if (mcStr) {
+      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+    }
+    if (price1h || price6h) {
+      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
+    }
     message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + wallet.slice(0, 4) + '...' + wallet.slice(-4) + '</a>\n\n';
     message += '<b>' + accumulation.buys.length + ' buys in last 2 hours:</b>\n\n';
     
@@ -553,13 +628,27 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
   }
 }
 
-async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, multiWallet) {
+async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, tokenMetrics, multiWallet) {
   try {
     var shortFunder = multiWallet.funder.slice(0, 4) + '...' + multiWallet.funder.slice(-4);
+    var mcStr = formatMarketCap(tokenMetrics.marketCap);
+    var price1h = formatPriceChange(tokenMetrics.priceChange1h);
+    var price6h = formatPriceChange(tokenMetrics.priceChange6h);
+    var vol1h = formatVolume(tokenMetrics.volume1h);
+    var vol6h = formatVolume(tokenMetrics.volume6h);
     
     var message = '\u{1F441} <b>MULTI-WALLET ALERT</b>\n\n';
     message += '<b>Token:</b> ' + (tokenName !== 'Unknown' ? tokenName + ' (' + tokenSymbol + ')' : tokenSymbol) + '\n';
     message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    if (mcStr) {
+      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+    }
+    if (price1h || price6h) {
+      message += '<b>Price:</b> ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '<b>Volume:</b> ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
+    }
     message += '<b>Funder:</b> <a href="https://gmgn.ai/sol/address/' + multiWallet.funder + '">' + shortFunder + '</a>\n\n';
     message += '<b>' + multiWallet.wallets.length + ' wallets from same source bought:</b>\n\n';
     
@@ -600,7 +689,7 @@ async function sendTelegramAlert(swapData) {
     var fundingSource = swapData.fundingSource;
     var fundingCex = swapData.fundingCex;
     var signature = swapData.signature;
-    var tokenAge = swapData.tokenAge;
+    var tokenMetrics = swapData.tokenMetrics || {};
 
     var freshnessLine;
     if (txCount >= 0) {
@@ -627,12 +716,20 @@ async function sendTelegramAlert(swapData) {
       tokenDisplay = tokenSymbol;
     }
 
-    var ageStr = formatAge(tokenAge);
-    var isNewToken = tokenAge && tokenAge < 24 * 60 * 60 * 1000;
+    var ageStr = formatAge(tokenMetrics.age);
+    var isNewToken = tokenMetrics.age && tokenMetrics.age < 24 * 60 * 60 * 1000;
+    var mcStr = formatMarketCap(tokenMetrics.marketCap);
+    var price1h = formatPriceChange(tokenMetrics.priceChange1h);
+    var price6h = formatPriceChange(tokenMetrics.priceChange6h);
+    var vol1h = formatVolume(tokenMetrics.volume1h);
+    var vol6h = formatVolume(tokenMetrics.volume6h);
 
     var message = '\u{1F40B} <b>BIG BUY ALERT</b>\n\n';
     message += '<b>Token:</b> ' + tokenDisplay + '\n';
     message += '<b>Contract:</b> <a href="https://solscan.io/token/' + tokenAddress + '">' + tokenAddress.slice(0, 8) + '...' + tokenAddress.slice(-4) + '</a>\n';
+    if (mcStr) {
+      message += '<b>Market Cap:</b> ' + mcStr + '\n';
+    }
     message += '<b>Wallet:</b> <a href="https://gmgn.ai/sol/address/' + wallet + '">' + shortWallet + '</a>\n';
     message += '<b>Amount:</b> ' + solAmount.toFixed(2) + ' SOL\n';
     message += '<b>DEX:</b> ' + dex + '\n\n';
@@ -640,6 +737,12 @@ async function sendTelegramAlert(swapData) {
     
     if (ageStr) {
       message += '\u{23F0} Token: ' + (isNewToken ? '\u{1F525} ' : '') + ageStr + '\n';
+    }
+    if (price1h || price6h) {
+      message += '\u{1F4C8} Price: ' + (price1h || 'N/A') + ' (1h) | ' + (price6h || 'N/A') + ' (6h)\n';
+    }
+    if (vol1h || vol6h) {
+      message += '\u{1F4B5} Vol: ' + (vol1h || 'N/A') + ' (1h) | ' + (vol6h || 'N/A') + ' (6h)\n';
     }
     
     if (fundingLine) {
@@ -820,7 +923,8 @@ app.post('/webhook', async function(req, res) {
             var accumKey = swapInfo.wallet + '-' + swapInfo.tokenAddress;
             var lastAccumAlert = accumulationAlerts.get(accumKey);
             if (!lastAccumAlert || Date.now() - lastAccumAlert > ACCUMULATION_COOLDOWN) {
-              await sendAccumulationAlert(swapInfo.wallet, swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, accumulation);
+              var accumMetrics = await getTokenMetrics(swapInfo.tokenAddress);
+              await sendAccumulationAlert(swapInfo.wallet, swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, accumMetrics, accumulation);
               accumulationAlerts.set(accumKey, Date.now());
             }
           }
@@ -840,7 +944,7 @@ app.post('/webhook', async function(req, res) {
 
         console.log('ALERT: ' + swapInfo.solAmount.toFixed(2) + ' SOL for ' + swapInfo.tokenSymbol);
 
-        swapInfo.tokenAge = await getTokenAge(swapInfo.tokenAddress);
+        swapInfo.tokenMetrics = await getTokenMetrics(swapInfo.tokenAddress);
 
         // Get funding source for fresh/new wallets
         if (txCount >= 0 && txCount < 50) {
@@ -855,7 +959,7 @@ app.post('/webhook', async function(req, res) {
               var multiKey = funding.wallet + '-' + swapInfo.tokenAddress;
               var lastMultiAlert = multiWalletAlerts.get(multiKey);
               if (!lastMultiAlert || Date.now() - lastMultiAlert > MULTI_WALLET_COOLDOWN) {
-                await sendMultiWalletAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, multiWallet);
+                await sendMultiWalletAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenMetrics, multiWallet);
                 multiWalletAlerts.set(multiKey, Date.now());
               }
             }
@@ -873,7 +977,7 @@ app.post('/webhook', async function(req, res) {
           if (cluster.isCluster) {
             var lastAlert = alertedClusters.get(swapInfo.tokenAddress);
             if (!lastAlert || Date.now() - lastAlert > CLUSTER_ALERT_COOLDOWN) {
-              await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenAge, cluster);
+              await sendClusterAlert(swapInfo.tokenAddress, swapInfo.tokenSymbol, swapInfo.tokenName, swapInfo.tokenMetrics, cluster);
               alertedClusters.set(swapInfo.tokenAddress, Date.now());
             }
           }
