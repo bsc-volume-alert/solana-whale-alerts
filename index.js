@@ -495,7 +495,8 @@ async function sendClusterAlert(tokenAddress, tokenSymbol, tokenName, tokenAge, 
     
     message += '\n<b>Total:</b> ' + cluster.totalSol.toFixed(1) + ' SOL\n\n';
     message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
-    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+    message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
+    message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
     var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
     await axios.post(telegramUrl, {
@@ -527,7 +528,8 @@ async function sendAccumulationAlert(wallet, tokenAddress, tokenSymbol, tokenNam
     
     message += '\n<b>Total:</b> ' + accumulation.totalSol.toFixed(1) + ' SOL\n\n';
     message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
-    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+    message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
+    message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
     var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
     await axios.post(telegramUrl, {
@@ -561,7 +563,8 @@ async function sendMultiWalletAlert(tokenAddress, tokenSymbol, tokenName, multiW
     
     message += '\n<b>Total:</b> ' + multiWallet.totalSol.toFixed(1) + ' SOL\n\n';
     message += '\u{1F517} <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
-    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+    message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
+    message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
     var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
     await axios.post(telegramUrl, {
@@ -636,7 +639,8 @@ async function sendTelegramAlert(swapData) {
     }
     message += '\n\u{1F517} <a href="https://solscan.io/tx/' + signature + '">TX</a>';
     message += ' | <a href="https://dexscreener.com/solana/' + tokenAddress + '">Dexscreener</a>';
-    message += ' | <a href="https://birdeye.so/token/' + tokenAddress + '?chain=solana">Birdeye</a>';
+    message += ' | <a href="https://axiom.trade/t/' + tokenAddress + '">Axiom</a>';
+    message += ' | <a href="https://twitter.com/search?q=' + tokenAddress + '">Twitter</a>';
 
     var telegramUrl = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
     await axios.post(telegramUrl, {
